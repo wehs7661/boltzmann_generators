@@ -41,10 +41,18 @@ class SystemFactory:
                                     "none" : boundary_conditions.NoBoundaryConditions
                                    }
 
-            
-        
 
-    def build_system(self, dim, T, rho, N, mass = 1, placement_method = "lattice", boundary_conditions = "periodic", central_potential = None, potential = "WCA", **args):
+    def build_system(self, 
+                    dim = 2,
+                    T = 1,
+                    rho = 0.6,
+                    N = 20,
+                    mass = 1,
+                    placement_method = "lattice",
+                    boundary_conditions = "periodic",
+                    central_potential = None,
+                    potential = "WCA",
+                    **args):
         if len(args) == 0:
             args = {"sigma" : 1, "epsilon" : 1}   
         box = (N / rho) ** (1/dim) * np.ones(dim)
@@ -102,7 +110,7 @@ class System(data_logging.Subject):
         self.int_fact = integrators.IntegratorFactory(self)
         self.integrator = None
         self.central_potential = None
-        self.bc = None
+        self.bc = boundary_conditions.NoBoundaryConditions(self)
         self.dim = dim
         self.dof = None
 

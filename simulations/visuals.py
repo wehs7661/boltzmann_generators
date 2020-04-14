@@ -14,15 +14,16 @@ muller = potentials.MuellerPotential(alpha = 0.1,
                             )
 
 
-def make_2D_traj_potential(x_traj, potential, xlim, ylim, cutoff = 10, fps = 30, markersize = 8, color = 'red'):
+def make_2D_traj_potential(x_traj, potential, xlim, ylim, cutoff = None, fps = 30, markersize = 8, color = 'red'):
+    if cutoff is None:
+        cutoff = np.inf
     X, Y = np.meshgrid(np.linspace(xlim[0],xlim[1],50), np.linspace(ylim[0],ylim[1],50))
-
     Z = []
     for i in range(len(X)):
         z = []
         for j in range(len(X)):
             v = potential([X[i,j], Y[i,j]])
-            if v > 15:
+            if v > cutoff:
                 z.append(15)
             else:
                 z.append(v)

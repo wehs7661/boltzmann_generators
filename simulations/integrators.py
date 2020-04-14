@@ -25,7 +25,8 @@ class IntegratorFactory():
         self.integrators = { 
                             "verlet" : VerletIntegrator,
                             "verlet_neighbors" : VerletIntegratorNeighbors,
-                            "verlet_cell_list" : VerletIntegratorCellList
+                            "verlet_cell_list" : VerletIntegratorCellList,
+                            "metropolis" : MetropolisIntegrator
                             }
 
     def get_integrator(self, integrator_name, dt, **kwargs):
@@ -327,3 +328,67 @@ class VerletIntegratorCellList(VerletIntegrator):
         self.system.set_forces(f)
         if self.thermostat is not None:
             self.thermostat.apply()
+
+
+
+class MetropolisIntegrator(Integrator):
+    def __init__(self, system, dt, temp, sigma = 1, adjust_sigma = True, adjust_freq = 10):
+        super().__init__(system, dt = None)
+        self.temp = temp
+        self.sigma = sigma
+        self.adjust_sigma = adjust_sigma
+        self.adjust_freq = adjust_freq
+        self.accepts = 0
+        self.steps = 0
+        self.energy = self.calculate_energy()[0]
+
+    def integrate(self):
+        r = self.system.get_coordinates()
+        i_prop = np.random.randint(0, len(self.system.particles))
+        delta_r = np.zeros(r.shape)
+        delta_r[i_prop, :] = self.sigma * np.random.randn(self.system.dim, )
+        r_prop = self.system.bc(r + delta_r)
+        e_proposed = self.calculate_energy(r_prop)[0]
+        delta_E = e_proposed - self.energy
+
+        # metropolis-hasting algorithm
+        if delta_E < 0:
+            self.energy = e_proposed
+            self.system.set_coordinates(r_prop)
+            self.accepts += 1
+        else:
+            p_acc = np.exp(-delta_E / self.temp)
+            if np.random.rand() < p_acc:
+                self.energy = e_proposed
+                self.system.set_coordinates(r_prop)
+                self.accepts += 1
+            else:
+                pass
+        self.steps += 1
+        if self.adjust_sigma and self.steps % self.adjust_freq == 0:
+            acc_ratio = self.accepts / self.steps
+            if acc_ratio < 0.3:
+                self.sigma *= 0.9
+            if acc_ratio > 0.8:
+                self.sigma *= 1.1
+            self.steps = 0
+            self.accepts = 0
+
+        
+    def calculate_energy(self, coords = None):
+        if coords is None:
+            coords = self.system.get_coordinates()
+        U = 0
+        if self.system.central_potential is not None:
+            for i in range(len(coords)):
+                U += self.system.central_potential(coords[i])
+        for pair in itertools.combinations(range(len(coords)), 2):
+            i, j = pair[0], pair[1]
+            r_ij = np.array(self.system.bc(coords[i, :] - coords[j, :]))
+            r_ji = - r_ij
+            u_ij = self.system.particles[i].potential(r_ij)
+            u_ji = self.system.particles[j].potential(r_ji)
+            U += (u_ij + u_ji)/2
+        return U, None, None
+
+        
