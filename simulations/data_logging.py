@@ -79,8 +79,6 @@ class PressureLogger(Observer):
             p = self.system.integrator.calculate_pressure()
             self.P.append(p)
 
-
-
 class VelocityLogger(Observer):
     def __init__(self, system, freq):
         self.system = system
