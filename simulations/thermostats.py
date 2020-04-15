@@ -37,7 +37,7 @@ class AndersonThermostat(Thermostat):
         if self.count % self.freq == 0:
             self.count = 0
             for particle in self.integrator.system.particles:
-                if self.integrator.dt * self.freq * self.colisions > \
+                if self. colisions * np.exp(self.integrator.dt * self.freq * self.colisions) > \
                      np.random.uniform():
                     particle.vel = np.random.normal(scale = np.sqrt(self.T/particle.mass),
                                                     size = particle.vel.shape)
