@@ -63,3 +63,6 @@ class MetropolisSampler:
         self.xtraj = np.array(self.xtraj)
         self.etraj = np.array(self.etraj)
 
+    def plot_samples(self):
+        pass
+
