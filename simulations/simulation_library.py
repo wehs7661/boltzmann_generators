@@ -18,6 +18,36 @@ class Particle:
         self.cell = None # <---- same thing here
         self.index = None
 
+class Bond:
+    def __init__(self, potential, particle_1, particle_2, particle_interactions = False, bc = None):
+        self.particle_1 = particle_1
+        self.particle_2 = particle_2
+        self.potential = potential
+        self.particle_interactions = particle_interactions
+        self.bc = bc
+        if bc is None:
+            self.bc = boundary_conditions.NoBoundaryConditions(None)
+
+
+    def get_distance(self):
+        r_ij = self.bc(self.particle_1.loc - self.particle_2.loc)
+        return(np.sqrt(np.dot(r_ij,r_ij)))
+
+    def get_rij(self):
+        return self.bc(self.particle_1.loc - self.particle_2.loc)
+    
+    def get_energy(self):
+        d_ij = self.get_distance()
+        return self.potential(d_ij)
+
+    def get_force(self):
+        d_ij = self.get_distance()
+        f = -self.potential.derivative(d_ij)
+        r_ij_hat = self.bc(self.particle_1.loc - self.particle_2.loc) / d_ij
+        f_ij = f * r_ij_hat
+        return f_ij
+
+
 class SystemFactory:
     def __init__(self):
         self.placement = {
@@ -27,13 +57,15 @@ class SystemFactory:
         
         self.potentials = {
                            "WCA" : potentials.WCAPotential,
-                           "LJ" : potentials.LJpotential
+                           "LJ" : potentials.LJpotential,
+                           "LJ-rep" : potentials.LJRepulsion
                           }
 
         self.central_potentials = {
                                    "harmonic" : potentials.HarmonicPotential,
                                    "double_well" : potentials.DoubleWellPotential,
-                                   "mueller" : potentials.MuellerPotential
+                                   "mueller" : potentials.MuellerPotential,
+                                   "harmonic_box" : potentials.HarmonicBox
                                   }
 
         self.boundary_conditions = {
@@ -106,6 +138,7 @@ class System(data_logging.Subject):
     def __init__(self, box = np.array([1, 1]), dim = 2):
         super().__init__()
         self.particles = []
+        self.bonds = []
         self.box = box
         self.int_fact = integrators.IntegratorFactory(self)
         self.integrator = None
@@ -146,6 +179,14 @@ class System(data_logging.Subject):
         if particle.vel is None:
             particle.vel = 0
         self.particles.append(particle)
+
+
+    # def __init__(self, potential, particle_1, particle_2, particle_interactions = False, bc = None):
+
+    def add_bond(self, potential, particle_i, particle_j):
+        self.bonds.append(Bond(potential, particle_i, particle_j, bc = self.bc))
+
+
 
     # Boundary Conditions
     def apply_bc(self, coords):

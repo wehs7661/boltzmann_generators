@@ -55,9 +55,7 @@ def make_2D_traj(x_traj, box, fps = 30, markersize = 8, color = 'red'):
     fps = fps
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    cs = ax.contourf(X,Y,Z, levels = 500)
     sct, = ax.plot([], [], "o", markersize=markersize, color = color)
-    cbar = fig.colorbar(cs)
     # pct, = ax.plot([], [], "o", markersize=8)
 
     def update_graph(i, xa, ya): # , vx, vy):

@@ -1,5 +1,6 @@
 import numpy as np
 
+# Particle Potentials
 class WCAPotential:
     def __init__(self, sigma, epsilon):
         self.r_c = np.power(2, 1/6) * sigma 
@@ -36,7 +37,40 @@ class LJpotential:
         else:
             return(np.zeros(r_ij.shape))
 
+class LJRepulsion:
+    def __init__(self, sigma, epsilon, r_c = None):
+        self.r_c = np.power(2, 1/6) * sigma 
+        self.sigma = sigma
+        self.epsilon = epsilon
 
+    def __call__(self, r_ij):
+        if np.dot(r_ij,r_ij) < self.r_c ** 2 or self.r_c is None:
+            return(self.epsilon * 4 * ((self.sigma**2 / np.dot(r_ij, r_ij)**3) ))
+        else:
+            return(0.0)
+    def derivative(self, r_ij):
+        if np.dot(r_ij,r_ij) < self.r_c ** 2 or self.r_c is None:
+            return( 24 * self.epsilon * r_ij / np.dot(r_ij, r_ij) * (2 * (self.sigma**2 / np.dot(r_ij, r_ij)**6) ))
+        else:
+            return(np.zeros(r_ij.shape))
+
+# 1D Potentials (for Internal Coordinates)
+class DoubleWellPotential1D:
+    def __init__(self, d0, a, b, c):
+        self.d0 = d0
+        self.a = a
+        self.b = b
+        self.c = c
+
+    def __call__(self, d):
+        return 1/4 * self.a * (d - self.d0) ** 4 - 1/2 * self.b * (d - self.d0) ** 2 + \
+            self.c * (d - self.d0)
+
+    def derivative(self, d):
+        return self.a * (d - self.d0) ** 3 - self.b * (d - self.d0) + self.c
+
+
+# Central Potentials
 class DoubleWellPotential:
     def __init__(self, a, b, c, d):
         self.a = a
@@ -93,7 +127,24 @@ class MuellerPotential:
         dy = 0
         for A, a, b, c, xj, yj in zip(self.A, self.a, self.b, self.c, self.xj, self.yj):
             dx += A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2) * (2 * a * (r[0] - xj) + b * (r[1] - yj))
-            dy += A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2) * (b * (r[1] - yj) + 2 * c * (r[1] - yj))
+            dy += A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2) * (b * (r[0] - xj) + 2 * c * (r[1] - yj))
         # print("dE =", self.alpha * np.array([dx, dy]))
         # print("r = ", r)
         return(self.alpha * np.array([dx, dy]))
+
+class HarmonicBox:
+    def __init__(self, l_box, k_box):
+        self.l_box = l_box
+        self.k_box = k_box
+
+    def __call__(self, r_ij):
+        u_upper = np.sum(np.heaviside(r_ij - self.l_box/2, 0) * self.k_box * (r_ij - self.l_box/2) ** 2)
+        u_lower = np.sum(np.heaviside(-r_ij - self.l_box/2, 0) * self.k_box * (-r_ij - self.l_box/2) ** 2)
+        return u_upper + u_lower
+
+    def derivative(self, r_ij):
+        du_upper = np.heaviside(r_ij - self.l_box/2, 0) * 2 * self.k_box * (r_ij - self.l_box/2)
+        du_lower = np.heaviside(-r_ij - self.l_box/2, 0) * -2 * self.k_box * (-r_ij - self.l_box/2)
+        return du_upper + du_lower
+
+

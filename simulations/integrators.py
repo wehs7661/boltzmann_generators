@@ -133,6 +133,7 @@ class VerletIntegratorNeighbors(VerletIntegrator):
             particle.delta_r = 0
             
     def integrate(self):
+
         r = self.system.get_coordinates()
         v = self.system.get_velocities()
         f = self.system.get_forces()
@@ -141,12 +142,12 @@ class VerletIntegratorNeighbors(VerletIntegrator):
         r += v_half * self.dt
         r = self.system.bc(r)
         self.system.set_coordinates(r)
-        self.check_delta_r()
         f = self.calculate_forces()
         v = v_half + np.multiply(f.transpose(), self.dt / ( 2 * self.system.get_masses() )).transpose()
-        
         self.system.set_velocities(v)
         self.system.set_forces(f)
+
+        self.check_delta_r()
 
         if self.thermostat is not None:
             self.thermostat.apply()
@@ -175,18 +176,36 @@ class VerletIntegratorNeighbors(VerletIntegrator):
                 neighbor_table[j,i] += 1
                 self.system.particles[i].neighbors.append(self.system.particles[j])
                 self.system.particles[j].neighbors.append(self.system.particles[i])
-        
+
     def calculate_forces(self):
         indices = list(range(len(self.system.particles)))
         forces = np.zeros((len(self.system.particles), self.system.dim))
+        
+        # Central Potential Loop
         if self.system.central_potential is not None:
             for i in indices:
                 forces[i, :] += -self.system.central_potential.derivative(self.system.particles[i].loc)
+        
+        # Pairwise Force Loop
         for i in indices:
             for neighbor in self.system.particles[i].neighbors:
                 r_ij = np.array(self.system.bc(self.system.particles[i].loc - neighbor.loc))
                 # print(neighbor.potential.derivative(r_ij))
                 forces[i, :] += neighbor.potential.derivative(r_ij)
+        
+        # Bond Energy Loop
+        if len(self.system.bonds) > 0:
+            for bond in self.system.bonds:
+                i = self.system.particles.index(bond.particle_1)
+                j = self.system.particles.index(bond.particle_2)
+                f_ij = bond.get_force()
+                forces[i, :] += f_ij
+                forces[j, :] += -f_ij
+                if bond.particle_interactions == False:
+                    r_ij = bond.get_rij()
+                    forces[i, :] -= bond.particle_2.potential.derivative(r_ij)
+                    forces[j, :] -= bond.particle_1.potential.derivative(-r_ij)
+
         return forces
 
     def calculate_energy(self):
@@ -200,7 +219,16 @@ class VerletIntegratorNeighbors(VerletIntegrator):
             for neighbor in self.system.particles[i].neighbors:
                 r_ij = np.array(self.system.bc(self.system.particles[i].loc - neighbor.loc))
                 U += neighbor.potential(r_ij)
-        H = U + K
+        if len(self.system.bonds) > 0:
+            for bond in self.system.bonds:
+                u_bond = bond.get_energy()
+                U += u_bond
+                if bond.particle_interactions == False:
+                    r_ij = bond.get_rij()
+                    U -= bond.particle_2.potential(r_ij)
+                    U -= bond.particle_1.potential(-r_ij)
+
+        H = U/2 + K
         return H, U, K
 
 
@@ -379,9 +407,13 @@ class MetropolisIntegrator(Integrator):
         if coords is None:
             coords = self.system.get_coordinates()
         U = 0
+
+        # Central Potential
         if self.system.central_potential is not None:
             for i in range(len(coords)):
                 U += self.system.central_potential(coords[i])
+        
+        # Pairwise Energy
         for pair in itertools.combinations(range(len(coords)), 2):
             i, j = pair[0], pair[1]
             r_ij = np.array(self.system.bc(coords[i, :] - coords[j, :]))
@@ -389,6 +421,16 @@ class MetropolisIntegrator(Integrator):
             u_ij = self.system.particles[i].potential(r_ij)
             u_ji = self.system.particles[j].potential(r_ji)
             U += (u_ij + u_ji)/2
+
+        # Bond Energy Loop
+        if len(self.system.bonds) > 0:
+            for bond in self.system.bonds:
+                u_ij = bond.get_energy()
+                U += u_ij
+                if bond.particle_interactions == False:
+                    r_ij = bond.get_rij()
+                    U -= bond.particle_1.potential(r_ij)
+
         return U, None, None
 
         
