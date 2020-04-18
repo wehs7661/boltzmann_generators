@@ -429,7 +429,7 @@ class MetropolisIntegrator(Integrator):
                 U += u_ij
                 if bond.particle_interactions == False:
                     r_ij = bond.get_rij()
-                    U -= bond.particle_1.potential(r_ij)
+                    U -= bond.particle_2.potential(r_ij)
 
         return U, None, None
 
