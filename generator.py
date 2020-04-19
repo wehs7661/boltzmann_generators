@@ -203,7 +203,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             elif energy[i].item() > e_max:
                 energy[i] = e_high + torch.log10(e_max - e_high + 1)
         
-        self.weights = torch.exp(-energy)
+        self.weights = torch.exp(-energy * 0)
 
         return energy
 
