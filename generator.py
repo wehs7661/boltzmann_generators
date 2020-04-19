@@ -1,3 +1,4 @@
+import sys
 import numpy as np 
 import torch
 import torch.nn as nn
@@ -145,10 +146,12 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             The loss function J_ML
         """
         z, log_R_xz = self.inverse_generator(batch_x)
-        u = self.calculate_energy(batch_x)   # so that self.weights is created
-        # note that the self.weights should be assigned basd on energies calculated on x (configuration)
-        # instead of z (latent variable)
-        J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz)
+        # we don't need u_z in the calculation of J_ml
+        # but we do need u_x in the calculation of J_kl, see the method 'loss_KL'
+        # we need u_x to caluculate the weighs for calculation expecatation in the confiugration space
+        u_x = self.calculate_energy(batch_x, space='configuration')   
+        weights_x = torch.exp(-u_x)
+        J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz, weights=weights_x)
 
         return J_ml
 
@@ -168,15 +171,18 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             The loss function J_KL
         """
         x, log_R_zx = self.generator(batch_z)
-        u_x = self.calculate_energy(x)
-        J_kl = self.expectation(u_x - log_R_zx)
+        u_x = self.calculate_energy(x, space='configuration')   # we need this to calculate J_kl
+        # we need u_z to caluculate the weighs for calculation expecatation in the latant space
+        u_z = self.calculate_energy(batch_z, space='latent')
+        weights_z = torch.exp(-u_z)
+        J_kl = self.expectation(u_x - log_R_zx, weights=weights_z)
 
         return J_kl
 
     def loss_RC(self):
         pass
 
-    def calculate_energy(self, batch):
+    def calculate_energy(self, batch, space):
         """
         Calculate the energy of each each configuration in a batch of dataset.
 
@@ -189,26 +195,41 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         -------
         energy : torch.Tensor
             The energies of the configurations
+        space : str
+            Whether to calcualte the energy in the real space (x) or the 
+            latent space (z). Available options: 'latent' or 'configuration'.
         """
 
         e_high, e_max = 10 ** 4, 10 ** 20
         energy = batch.new_zeros(batch.shape[0])  # like np.zeros, same length as batch_data
 
-        for i in range(batch.shape[0]):  # for each data point in the dataset
-            config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
-            energy[i] = self.system.get_energy(config[0], config[1])
-            # regularize the energy
-            if energy[i].item() > e_high:
-                energy[i] = e_high + torch.log10(energy[i] - e_high + 1)
-            elif energy[i].item() > e_max:
-                energy[i] = e_high + torch.log10(e_max - e_high + 1)
-        
-        self.weights = torch.exp(-energy * 0)
+        if space == 'configuration':
+            for i in range(batch.shape[0]):  # for each data point in the dataset
+                config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
+                energy[i] = self.system.get_energy(config[0], config[1])
+                # regularize the energy (see page 3 in the SI)
+                if energy[i].item() > e_high:
+                    energy[i] = e_high + torch.log10(energy[i] - e_high + 1)
+                elif energy[i].item() > e_max:
+                    energy[i] = e_high + torch.log10(e_max - e_high + 1)
+        elif space == 'latent':
+            for i in range(batch.shape[0]):  # for each data point in the dataset
+                config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
+                # for 2D Gaussian distribution, u(z) = (1 / (2*sigma **2)) * z ** 2
+                # in our case, sigma =1 and z ** 2 = z[0] ** 2 + z[1] ** 2
+                energy[i] = 0.5 * (config[0] ** 2 + config[1] ** 2)
+                # regularize the energy (see page 3 in the SI)
+                if energy[i].item() > e_high:
+                    energy[i] = e_high + torch.log10(energy[i] - e_high + 1)
+                elif energy[i].item() > e_max:
+                    energy[i] = e_high + torch.log10(e_max - e_high + 1)
+        else:
+            print("Error! Unavailable option of parameter 'space' specificed.")
+            sys.exit()
 
         return energy
 
-
-    def expectation(self, observable):
+    def expectation(self, observable, weights):
         """ 
         Calculate the expectation value of an observable
         
@@ -223,7 +244,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             Expectation value as a one-element tensor
         """
         # e = torch.dot(observable, self.weights) / torch.sum(self.weights) the same as below
-        e = torch.sum(observable * self.weights) / torch.sum(self.weights)
+        e = torch.sum(observable * weights) / torch.sum(weights)
 
         return e
 
