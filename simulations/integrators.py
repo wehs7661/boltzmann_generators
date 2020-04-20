@@ -369,6 +369,7 @@ class MetropolisIntegrator(Integrator):
         self.accepts = 0
         self.steps = 0
         self.energy = self.calculate_energy()[0]
+        self.moves = []
 
     def integrate(self):
         r = self.system.get_coordinates()
@@ -402,7 +403,6 @@ class MetropolisIntegrator(Integrator):
             self.steps = 0
             self.accepts = 0
 
-        
     def calculate_energy(self, coords = None):
         if coords is None:
             coords = self.system.get_coordinates()
