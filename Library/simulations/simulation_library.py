@@ -160,8 +160,8 @@ class System(data_logging.Subject):
             obs.update(steps)
 
     # Get type of integrator
-    def get_integrator(self, integrator_name, dt, **args):
-        self.integrator = self.int_fact.get_integrator(integrator_name, dt, **args)
+    def get_integrator(self, integrator_name, **kwargs):
+        self.integrator = self.int_fact.get_integrator(integrator_name, **kwargs)
 
     def get_thermostat(self, thermostat_name, T, **kwargs):
         self.integrator.get_thermostat(thermostat_name, T, **kwargs)
@@ -249,9 +249,21 @@ class System(data_logging.Subject):
         for i in indices:
             self.particles[i].masses = masses[i]
 
-    def get_energy(self):
-        H, U, K = self.integrator.calculate_energy()
-        return(H, U, K)
+    def get_energy(self, coords = None, energy_type = "potential"):
+        e_type = {
+                  "total" : 0,
+                  "potential" : 1,
+                  "kinetic" : 2
+                 }
+        if coords is None:
+            H, U, K = self.integrator.calculate_energy()
+            return(H, U, K)
+        else:
+            old_coords = self.get_coordinates()
+            self.set_coordinates(coords.reshape(old_coords.shape))
+            energy = self.integrator.calculate_energy()[e_type[energy_type]]
+            self.set_coordinates(old_coords)
+            return(energy)
 
             
         

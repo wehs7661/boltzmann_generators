@@ -33,14 +33,14 @@ class MetropolisSampler:
     def run(self, x, nsteps=1):
         # quantities at t = 0
         x0 = x
-        E0 = self.model.get_energy(x[0], x[1])
+        E0 = self.model.get_energy(x)
         self.xtraj, self.etraj = [copy.deepcopy(x0)], [E0]
 
         for i in range(nsteps):
-            E_current = self.model.get_energy(x[0], x[1])
+            E_current = self.model.get_energy(x)
             delta_x = self.sigma * np.random.randn(2,)  # same dimension as self.x
             x_proposed = x + delta_x
-            E_proposed = self.model.get_energy(x_proposed[0], x_proposed[1])
+            E_proposed = self.model.get_energy(x_proposed)
             delta_E = E_proposed - E_current
             beta = 1 / self.temp
             

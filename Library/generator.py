@@ -149,7 +149,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         # we don't need u_z in the calculation of J_ml
         # but we do need u_x in the calculation of J_kl, see the method 'loss_KL'
         # we need u_x to caluculate the weighs for calculation expecatation in the confiugration space
-        u_x = self.calculate_energy(batch_x, space='configuration')   
+        u_x = self.calculate_energy(batch_x, space='configuration')
         weights_x = torch.exp(-u_x)
         J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz, weights=weights_x)
 
@@ -200,34 +200,35 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             latent space (z). Available options: 'latent' or 'configuration'.
         """
 
-        e_high, e_max = 10 ** 4, 10 ** 20
         energy = batch.new_zeros(batch.shape[0])  # like np.zeros, same length as batch_data
 
         if space == 'configuration':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
-                energy[i] = self.system.get_energy(config[0], config[1])
+                energy[i] = self.regularize_energy(self.system.get_energy(config.detach().numpy()))
                 # regularize the energy (see page 3 in the SI)
-                if energy[i].item() > e_high:
-                    energy[i] = e_high + torch.log10(energy[i] - e_high + 1)
-                elif energy[i].item() > e_max:
-                    energy[i] = e_high + torch.log10(e_max - e_high + 1)
+
         elif space == 'latent':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
                 # for 2D Gaussian distribution, u(z) = (1 / (2*sigma **2)) * z ** 2
                 # in our case, sigma =1 and z ** 2 = z[0] ** 2 + z[1] ** 2
-                energy[i] = 0.5 * (config[0] ** 2 + config[1] ** 2)
+                energy[i] = self.regularize_energy(0.5 * (config[0] ** 2 + config[1] ** 2))
                 # regularize the energy (see page 3 in the SI)
-                if energy[i].item() > e_high:
-                    energy[i] = e_high + torch.log10(energy[i] - e_high + 1)
-                elif energy[i].item() > e_max:
-                    energy[i] = e_high + torch.log10(e_max - e_high + 1)
+
         else:
             print("Error! Unavailable option of parameter 'space' specificed.")
             sys.exit()
 
         return energy
+
+    def regularize_energy(self, energy, e_high = 10 ** 4, e_max = 10 ** 20):
+        if energy.item() > e_high:
+            energy = e_high + np.log10(energy - e_high + 1)
+        elif energy.item() > e_max:
+            energy= e_high + np.log10(e_max - e_high + 1)
+        return energy
+
 
     def expectation(self, observable, weights):
         """ 
