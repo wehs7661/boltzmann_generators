@@ -5,7 +5,7 @@ import potentials
 import numpy as np
 
 
-def make_2D_traj_potential(x_traj, potential, xlim, ylim, min = -10, max = -3, fps = 30, markersize = 8, color = 'red'):
+def make_2D_traj_potential(x_traj, potential, xlim, ylim, min = -10, max = -3, fps = 30, markersize = 8, color = 'red', cmap = "viridis"):
     X, Y = np.meshgrid(np.linspace(xlim[0],xlim[1],50), np.linspace(ylim[0],ylim[1],50))
     Z = []
     for i in range(len(X)):
@@ -19,9 +19,10 @@ def make_2D_traj_potential(x_traj, potential, xlim, ylim, min = -10, max = -3, f
     fps = fps
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    cs = ax.contourf(X,Y,Z, levels = 500, cmap='jet')
+    cs = ax.contourf(X,Y,Z, levels = 500, cmap=cmap)
     sct, = ax.plot([], [], "o", markersize=markersize, color = color, vmin = min, vmax = max)
     cbar = fig.colorbar(cs)
+    plt.clim(min,max)
     # pct, = ax.plot([], [], "o", markersize=8)
 
     def update_graph(i, xa, ya): # , vx, vy):
@@ -58,7 +59,7 @@ def make_2D_traj(x_traj, box, fps = 30, markersize = 8, color = 'red'):
     plt.rcParams['animation.html'] = 'html5'
     return(ani)
 
-def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, markersize = 8, color = 'red'):
+def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, markersize = 8, color = 'red', cmap = "viridis"):
     X, Y = np.meshgrid(np.linspace(xlim[0],xlim[1],50), np.linspace(ylim[0],ylim[1],50))
     Z = []
     for i in range(len(X)):
@@ -68,7 +69,8 @@ def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, mark
             z.append(v)
         Z.append(z)
     Z = np.array(Z)
-    cs = plt.contourf(X,Y,Z, levels = 500, cmap='jet', vmin=min, vmax=max)
+    cs = plt.contourf(X,Y,Z, levels = 500, cmap=cmap, vmin=min, vmax=max)
     cbar = plt.colorbar(cs)
+    plt.clim(min,max)
     plt.ylabel("$x_2$")
     plt.xlabel("$x_1$")
