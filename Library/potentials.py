@@ -70,7 +70,7 @@ class DoubleWellPotential:
             E = self.get_energy(x, y)
             plt.plot(x, E)
             plt.xlabel('$ x_{1} $')
-            plt.ylabel('Potential energy $u{x_{1}}$')
+            plt.ylabel('Potential energy $u({x_{1}})$')
             plt.title('Cross section of the double-well potential at $ x_{2} $ = %s' % y)
 
     def plot_FES(self):
