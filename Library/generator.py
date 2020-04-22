@@ -73,8 +73,10 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             z_ = self.mask[i] * z    # b * x in equation (9)
             s = self.s[i](z_)        # s(b * x) in equation (9)
             t = self.t[i](z_)        # t(b * x) in equation (9)
-            z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)  # equation (9)
-            log_R_xz -= torch.sum(s, -1)  # negative sign: since we are moving backward!
+            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)  # equation (9)
+            z = z_ + (1 - self.mask[i]) * (z * torch.exp(s) + t)
+            log_R_xz += torch.sum(s, -1)  
+            #print(log_R_xz)
             if process is True: 
                 z_list.append(copy.deepcopy(z.detach().numpy()))
 
@@ -112,8 +114,9 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             x_ = self.mask[i] * x           # b * x in equation (9)
             s = self.s[i](x_)               # s(b * x) in equation (9)
             t = self.t[i](x_)               # t(b * x) in equation (9)
-            x = x_ + (1 - self.mask[i]) * (x * torch.exp(s) + t)   # equation (9)
-            log_R_zx += torch.sum(s, -1)    # equation (6) 
+            #x = x_ + (1 - self.mask[i]) * (x * torch.exp(s) + t)   # equation (9)
+            x = x_ + (1 - self.mask[i]) * (x - t) * torch.exp(-s)
+            log_R_zx -= torch.sum(s, -1)    # equation (6) 
             if process is True:
                 x_list.append(copy.deepcopy(x.detach().numpy()))
         
