@@ -1,4 +1,5 @@
 import sys
+import copy
 import numpy as np 
 import torch
 import torch.nn as nn
@@ -43,7 +44,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         self.system = system # class of what molecular system are we considering. E.g. Ising.
         self.sys_dim = sys_dim # tuple describing original dim. of system. e.g. Ising Model with N = 8 would be (8,8)
 
-    def inverse_generator(self, x):
+    def inverse_generator(self, x, process=False):
         """
         Inverse Boltzmann generator which transforms the samples drawn from the probability distribution
         in the configuration space to the real space. (Fxz in the Boltzmann generator paper)
@@ -63,6 +64,8 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         z = x   # just for initialization
         log_R_xz = x.new_zeros(x.shape[0])
         # new_zeros(size) returns a tensor of size "size" filled with 0s
+        z_list = []
+        z_list.append(copy.deepcopy(x.detach().numpy()))
 
         for i in reversed(range(len(self.t))):   # move backwards through the layers
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
@@ -71,11 +74,16 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             s = self.s[i](z_)        # s(b * x) in equation (9)
             t = self.t[i](z_)        # t(b * x) in equation (9)
             z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)  # equation (9)
-            log_R_xz -= torch.sum(s, -1)  # negative sign: since we are moving backward! 
+            log_R_xz -= torch.sum(s, -1)  # negative sign: since we are moving backward!
+            if process is True: 
+                z_list.append(copy.deepcopy(z.detach().numpy()))
 
-        return z, log_R_xz
+        if process is False:
+            return z, log_R_xz
+        else:
+            return z, log_R_xz, z_list
 
-    def generator(self, z):
+    def generator(self, z, process=False):
         """ 
         Boltzmann generator which transforms the samples drawn from the probability distribution 
         in the latent space to the configuration space. (Fzx in the Boltzmann generator paper)
@@ -95,6 +103,8 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         x = z   # just for initialization
         log_R_zx = z.new_zeros(z.shape[0])
         # new_zeros(size) returns a tensor of size "size" filled with 0s
+        x_list = []
+        x_list.append(copy.deepcopy(z.detach().numpy()))
 
         for  i in range(len(self.t)):
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
@@ -104,8 +114,13 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             t = self.t[i](x_)               # t(b * x) in equation (9)
             x = x_ + (1 - self.mask[i]) * (x * torch.exp(s) + t)   # equation (9)
             log_R_zx += torch.sum(s, -1)    # equation (6) 
+            if process is True:
+                x_list.append(copy.deepcopy(x.detach().numpy()))
         
-        return x, log_R_zx
+        if process is True:
+            return x, log_R_zx, x_list
+        else:
+            return x, log_R_zx
 
     def loss_total(self, batch, w_ml=1.0, w_kl=1.0, w_rc=1.0):
         """
