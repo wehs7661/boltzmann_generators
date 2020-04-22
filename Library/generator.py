@@ -201,11 +201,12 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         """
 
         energy = batch.new_zeros(batch.shape[0])  # like np.zeros, same length as batch_data
-
         if space == 'configuration':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
                 energy[i] = self.regularize_energy(self.system.get_energy(config.detach().numpy()))
+                # import pdb
+                # pdb.set_trace()
                 # regularize the energy (see page 3 in the SI)
 
         elif space == 'latent':
