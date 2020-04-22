@@ -4,15 +4,6 @@ from matplotlib import animation
 import potentials
 import numpy as np
 
-muller = potentials.MuellerPotential(alpha = 0.1,
-                             A = [-200, -100, -170, 15],
-                             a = [-1, -1, -6.5, 0.7],
-                             b = [0, 0, 11, 0.6],
-                             c = [-10, -10, -6.5, 0.7],
-                             xj = [1, 0, -0.5, -1],
-                             yj = [0, 0.5, 1.5, 1]
-                            )
-
 
 def make_2D_traj_potential(x_traj, potential, xlim, ylim, cutoff = None, fps = 30, markersize = 8, color = 'red'):
     if cutoff is None:
@@ -71,3 +62,23 @@ def make_2D_traj(x_traj, box, fps = 30, markersize = 8, color = 'red'):
     ani = animation.FuncAnimation(fig, update_graph, video_traj.shape[0], fargs=(video_traj[:,:,0], video_traj[:,:,1]), interval=1000/fps)
     plt.rcParams['animation.html'] = 'html5'
     return(ani)
+
+def plot_2D_potential(potential, xlim, ylim, cutoff = None, fps = 30, markersize = 8, color = 'red'):
+    if cutoff is None:
+        cutoff = np.inf
+    X, Y = np.meshgrid(np.linspace(xlim[0],xlim[1],50), np.linspace(ylim[0],ylim[1],50))
+    Z = []
+    for i in range(len(X)):
+        z = []
+        for j in range(len(X)):
+            v = potential([X[i,j], Y[i,j]])
+            if v > cutoff:
+                z.append(15)
+            else:
+                z.append(v)
+        Z.append(z)
+    Z = np.array(Z)
+    cs = plt.contourf(X,Y,Z, levels = 500)
+    cbar = plt.colorbar(cs)
+    plt.ylabel("$x_2$")
+    plt.xlabel("$x_1$")

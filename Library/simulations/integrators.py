@@ -6,7 +6,7 @@ import itertools
 import thermostats
 
 class Integrator(ABC):
-    def __init__(self, system, dt, thermostat = None):
+    def __init__(self, system, dt = None, thermostat = None):
         self.system = system
         self.dt = dt
         self.thermostat = thermostat
@@ -29,15 +29,15 @@ class IntegratorFactory():
                             "metropolis" : MetropolisIntegrator
                             }
 
-    def get_integrator(self, integrator_name, dt, **kwargs):
+    def get_integrator(self, integrator_name, **kwargs):
         if integrator_name in self.integrators.keys():
-            return(self.integrators[integrator_name](self.system, dt,**kwargs))
+            return(self.integrators[integrator_name](self.system, **kwargs))
         else:
             raise NotImplementedError(integrator_name + " is not a valid integrator")
 
 class VerletIntegrator(Integrator):
-    def __init__(self, system, dt):
-        super().__init__(system, dt)
+    def __init__(self, system, dt = None):
+        super().__init__(system, dt=dt)
 
     def integrate(self):
         r = self.system.get_coordinates()
@@ -360,8 +360,8 @@ class VerletIntegratorCellList(VerletIntegrator):
 
 
 class MetropolisIntegrator(Integrator):
-    def __init__(self, system, dt, temp, sigma = 1, adjust_sigma = True, adjust_freq = 10):
-        super().__init__(system, dt = None)
+    def __init__(self, system, temp, sigma = 1, adjust_sigma = True, adjust_freq = 10):
+        super().__init__(system, None)
         self.temp = temp
         self.sigma = sigma
         self.adjust_sigma = adjust_sigma
@@ -431,6 +431,6 @@ class MetropolisIntegrator(Integrator):
                     r_ij = bond.get_rij()
                     U -= bond.particle_2.potential(r_ij)
 
-        return U, None, None
+        return U, U, None
 
         
