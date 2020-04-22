@@ -45,7 +45,7 @@ class LJRepulsion:
 
     def __call__(self, r_ij):
         if np.dot(r_ij,r_ij) < self.r_c ** 2 or self.r_c is None:
-            return(self.epsilon * 4 * ((self.sigma**2 / np.dot(r_ij, r_ij)**3) ))
+            return(self.epsilon * 4 * ((self.sigma**2 / np.dot(r_ij, r_ij)**6) ))
         else:
             return(0.0)
     def derivative(self, r_ij):

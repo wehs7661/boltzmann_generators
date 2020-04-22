@@ -64,6 +64,7 @@ class VerletIntegrator(Integrator):
         if self.system.central_potential is not None:
             for i in indices:
                 forces[i, :] += -self.system.central_potential.derivative(self.system.particles[i].loc)
+        
         if len(self.system.particles):
             for pair in itertools.combinations(indices, 2):
                 i, j = pair[0], pair[1]
@@ -73,6 +74,19 @@ class VerletIntegrator(Integrator):
                 r_ji = np.array(self.system.bc(self.system.particles[j].loc - self.system.particles[i].loc))
                 forces[i, :] += self.system.particles[j].potential.derivative(r_ij)
                 forces[j, :] += self.system.particles[i].potential.derivative(r_ji)
+        
+        # Bond Energy Loop
+        if len(self.system.bonds) > 0:
+            for bond in self.system.bonds:
+                i = self.system.particles.index(bond.particle_1)
+                j = self.system.particles.index(bond.particle_2)
+                f_ij = bond.get_force()
+                forces[i, :] += f_ij
+                forces[j, :] += -f_ij
+                if bond.particle_interactions == False:
+                    r_ij = bond.get_rij()
+                    forces[i, :] -= bond.particle_2.potential.derivative(r_ij)
+                    forces[j, :] -= bond.particle_1.potential.derivative(-r_ij)
             
         return forces
 
@@ -90,6 +104,15 @@ class VerletIntegrator(Integrator):
             u_ij = self.system.particles[j].potential(r_ij)
             u_ji = self.system.particles[i].potential(r_ji)
             U += (u_ij + u_ji)/2
+
+        if len(self.system.bonds) > 0:
+            for bond in self.system.bonds:
+                u_bond = bond.get_energy()
+                U += u_bond
+                if bond.particle_interactions == False:
+                    r_ij = bond.get_rij()
+                    U -= bond.particle_2.potential(r_ij)
+                    U -= bond.particle_1.potential(-r_ij)
         H = U + K
         return H, U, K
 
