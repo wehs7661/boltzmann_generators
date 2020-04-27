@@ -73,7 +73,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             z_ = self.mask[i] * z    # b * x in equation (9)
             s = self.s[i](z_) * (1 - self.mask[i])       # s(b * x) in equation (9)
             t = self.t[i](z_) * (1 - self.mask[i])       # t(b * x) in equation (9)
-            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)    # equation (9)
+            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s) +    # equation (9)
             #log_R_xz -= torch.sum(s, -1)
             z = z_ + (1 - self.mask[i]) * (z * torch.exp(s) + t)
             log_R_xz += torch.sum(s, -1)  
