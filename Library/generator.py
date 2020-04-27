@@ -71,10 +71,11 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
             # See equation (9) in the original RealNVP papaer
             z_ = self.mask[i] * z    # b * x in equation (9)
-            s = self.s[i](z_)        # s(b * x) in equation (9)
-            t = self.t[i](z_)        # t(b * x) in equation (9)
-            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)  # equation (9)
-            z = z_ + (1 - self.mask[i]) * ((1 - self.mask[i]) * z * torch.exp(s) + t)
+            s = self.s[i](z_) * (1 - self.mask[i])       # s(b * x) in equation (9)
+            t = self.t[i](z_) * (1 - self.mask[i])       # t(b * x) in equation (9)
+            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)    # equation (9)
+            #log_R_xz -= torch.sum(s, -1)
+            z = z_ + (1 - self.mask[i]) * (z * torch.exp(s) + t)
             log_R_xz += torch.sum(s, -1)  
             #print(log_R_xz)
             if process is True: 
@@ -112,9 +113,10 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
             # See equation (9) in the original RealNVP papaer
             x_ = self.mask[i] * x         # b * x in equation (9)
-            s = self.s[i](x_)             # s(b * x) in equation (9)
-            t = self.t[i](x_)             # t(b * x) in equation (9)
+            s = self.s[i](x_) * (1 - self.mask[i])            # s(b * x) in equation (9)
+            t = self.t[i](x_) * (1 - self.mask[i])            # t(b * x) in equation (9)
             #x = x_ + (1 - self.mask[i]) * (x * torch.exp(s) + t)   # equation (9)
+            #log_R_zx += torch.sum(s, -1)
             x = x_ +  (1 - self.mask[i]) * (x - t) * torch.exp(-s)
             log_R_zx -= torch.sum(s, -1)    # equation (6) 
             if process is True:
@@ -167,9 +169,10 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         # we don't need u_z in the calculation of J_ml
         # but we do need u_x in the calculation of J_kl, see the method 'loss_KL'
         # we need u_x to caluculate the weighs for calculation expecatation in the confiugration space
-        u_x = self.calculate_energy(batch_x, space='configuration')   
+        u_x = self.calculate_energy(batch_x, space='configuration')  
+        u_z = self.calculate_energy(z, space='latent') 
         weights_x = torch.exp(-u_x) 
-        J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz, weights=weights_x)
+        J_ml = self.expectation(u_z - log_R_xz, weights=weights_x)
 
         return J_ml
 
@@ -192,7 +195,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         u_x = self.calculate_energy(x, space='configuration')   # we need this to calculate J_kl
         # we need u_z to caluculate the weighs for calculation expecatation in the latant space
         u_z = self.calculate_energy(batch_z, space='latent')
-        weights_z = torch.exp(-u_z) 
+        weights_z = torch.exp(-u_z)  
         J_kl = self.expectation(u_x - log_R_zx, weights=weights_z)
 
         return J_kl
@@ -261,9 +264,8 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         e : torch.Tensor
             Expectation value as a one-element tensor
         """
-        # e = torch.dot(observable, self.weights) / torch.sum(self.weights) the same as below
+        # e = torch.dot(observable, weights) / torch.sum(weights) #the same as below
         e = torch.sum(observable * weights) / torch.sum(weights)
-
         return e
 
         
