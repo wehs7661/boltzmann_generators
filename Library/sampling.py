@@ -30,7 +30,7 @@ class MetropolisSampler:
         # time evolution of the position and the energy
         # self.xtraj, self.etraj = [], []
 
-    def run(self, x, nsteps=1):
+    def run(self, x, nsteps=1, diff=False):
         # quantities at t = 0
         x0 = x
         E0 = self.model.get_energy(x)
@@ -57,8 +57,13 @@ class MetropolisSampler:
                     pass   # the coordinates and energy remain the same
             
             if i % self.stride == self.stride - 1:
-                self.xtraj.append(copy.deepcopy(x))
-                self.etraj.append(E_current)
+                if diff is True:
+                    if x[0] != self.xtraj[-1][0]:
+                        self.xtraj.append(copy.deepcopy(x))
+                        self.etraj.append(E_current)
+                else:
+                    self.xtraj.append(copy.deepcopy(x))
+                    self.etraj.append(E_current)
 
         self.xtraj = np.array(self.xtraj)
         self.etraj = np.array(self.etraj)
