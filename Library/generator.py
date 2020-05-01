@@ -3,7 +3,7 @@ import copy
 import numpy as np 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import density_estimator
 
 class RealNVP(nn.Module):  # inherit from nn.Module
     def __init__(self, s_net, t_net, mask, prior, system, sys_dim):
@@ -33,7 +33,6 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         t           The translation function in the affine coupling layers.
         sys_dim     The dimensionality of the system
         """
-        
         super(RealNVP, self).__init__()  # nn.Module.__init__()
         self.prior = prior 
         self.mask = nn.Parameter(mask, requires_grad=False)  # could try requires_grad=False
@@ -66,18 +65,23 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         # new_zeros(size) returns a tensor of size "size" filled with 0s
         z_list = []
         z_list.append(copy.deepcopy(x.detach().numpy()))
-
         for i in reversed(range(len(self.t))):   # move backwards through the layers
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
-            # See equation (9) in the original RealNVP papaer
+            # See equation (9) in the original RealNVP papaer    
             z_ = self.mask[i] * z    # b * x in equation (9)
             s = self.s[i](z_) * (1 - self.mask[i])       # s(b * x) in equation (9)
+            """
+            print("self.s[i] = ", self.s[i])
+            print("z_ = ", z_)
+            print("self.s[i](z_) = ", self.s[i](z_))
+            print("1-self.mask[i] = ", 1-self.mask[i] )
+            print("s = ", s)
+            """
             t = self.t[i](z_) * (1 - self.mask[i])       # t(b * x) in equation (9)
             #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s) +    # equation (9)
             #log_R_xz -= torch.sum(s, -1)
             z = z_ + (1 - self.mask[i]) * (z * torch.exp(s) + t)
             log_R_xz += torch.sum(s, -1)  
-            #print(log_R_xz)
             if process is True: 
                 z_list.append(copy.deepcopy(z.detach().numpy()))
 
@@ -126,33 +130,10 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             return x, log_R_zx, x_list
         else:
             return x, log_R_zx
-
-    def loss_total(self, batch, w_ml=1.0, w_kl=1.0, w_rc=1.0):
-        """
-        Calculate the total loss function.
-
-        Parameters
-        ----------
-        batch : 
-
-        w_ml : 
-
-        w_kl : 
-
-        w_rc
-
-        Returns
-        -------
-        loss : 
-
-        """        
-        loss = w_ml * self.loss_ML(batch) + w_kl * self.loss_ML(batch) + w_rc * self.loss_RC(batch)
-
-        return loss
         
     def loss_ML(self, batch_x):
         """
-        Calculate the loss function when training by example (samples from the configuration space)
+        Calculates   the loss function when training by example (samples from the configuration space)
         J_ML = E[u_z(z) - log Rxz(x)], where u_z(z) = 0.5 * /(sigma^{2}) * z^{2} (sigma = 1)
 
         Parameters
@@ -178,7 +159,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
 
     def loss_KL(self, batch_z):
         """
-        Calculate the loss function when training by energy (samples from the latent space)
+        Calculates the loss function when training by energy (samples from the latent space)
         J_KL = E[u_x(x) - log Rzx(z)]
 
         Parameters
@@ -200,8 +181,35 @@ class RealNVP(nn.Module):  # inherit from nn.Module
 
         return J_kl
 
-    def loss_RC(self):
-        pass
+    def loss_RC(self, batch_RC, bounds):
+        """
+        Calculates the reaction coordinate loss function. J_RC = E[logp(RC)].
+
+        Parameters
+        ----------
+        batch_RC : np.array
+            A batch of samples along the reaction coordinate
+        bounds : list
+            The upper bound and the lower bound of the reaction coordinate
+        
+        Returns
+        -------
+        J_rc : torch.Tensor
+            The loss function J_RC
+
+        Note
+        ----
+        At the current stage, this method might only work for DWP.
+        """
+        RC_range = np.linspace(bounds[0], bunds[1], len(batch_RC))
+        p, log_p = density_estimator(batch_RC, RC_range)
+        x2 = np.zeros(len(RC_range))
+        RC_data = torch.from_numpy(np.column_stack((RC_range, x2)))
+        u_rc = self.calculate_energy(RC_data, space='configuration')
+        weights_rc = torch.exp(-u_rc)
+        J_rc = self.expectation(log_p, weights=weights_rc)
+
+        return J_rc
 
     def calculate_energy(self, batch, space):
         """
@@ -227,7 +235,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         if space == 'configuration':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
-                energy[i] = self.system.get_energy(config[0], config[1])
+                energy[i] = self.system.get_energy([config[0], config[1]])
                 # regularize the energy (see page 3 in the SI)
                 if energy[i].item() > e_high:
                     energy[i] = e_high + torch.log10(energy[i] - e_high + 1)

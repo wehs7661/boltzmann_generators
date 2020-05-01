@@ -2,11 +2,14 @@ import os
 import sys
 import copy
 import yaml
+import numpy as np
 import torch
 import torch.nn as nn
 from tqdm.auto import tqdm
 from torch.utils import data
+from torch import distributions
 from generator import RealNVP
+from collections import OrderedDict
 
 # the following two functions and setup_yaml() are for preserving the
 # order of the dictionary to be printed to the parameter yaml file
@@ -30,7 +33,7 @@ class BoltzmannGenerator:
         ----------
         model_params : dict
             A dictionary of the model parameters, including the n_blocks, dimension, 
-            n_hidden, l_hidden, n_iteration, batch_size, LR and prior_sigma
+            n_nodes, n_layers, n_iteration, batch_size, LR and prior_sigma
         """
         defaults = {'n_blocks': 3, 'dimension': 2, 'n_nodes': 100, 'n_layers': 3, 
                     'n_iterations': 200, 'batch_size': 1000, 'LR': 0.001, 'prior_sigma': 1}
@@ -51,23 +54,52 @@ class BoltzmannGenerator:
 
     def affine_layers(self):
         layers = []
-        for i in range(self.l_hidden):
+        for i in range(self.n_layers):
             if i == 0:  # first layer
                 layers.append(nn.Linear(self.dimension, self.n_nodes))
             elif i == self.n_layers - 1:  # last layer
-                laers.append(nn.Linear(self.n_nodes, self.dimension))
+                layers.append(nn.Linear(self.n_nodes, self.dimension))
             else:  # hidden layers
+                layers.append(nn.Linear(self.n_nodes, self.n_nodes))
+            
+            if i != self.n_layers - 1:
+                layers.append(nn.ReLU())
+        
+        return layers
+
+    def build_networks(self):
+        s_layers = self.affine_layers()
+        s_layers.append(nn.Tanh())
+        t_layers = self.affine_layers()
+        
+        self.s_net = lambda: nn.Sequential(*s_layers)
+        self.t_net = lambda: nn.Sequential(*t_layers)
+
+    def affine_layers1(self):
+        layers = []
+        """
+        for i in range(self.n_layers):
+            if i == 0:  # first layer
                 layers.append(nn.Linear(self.dimension, self.n_nodes))
+            elif i == self.n_layers - 1:  # last layer
+                layers.append(nn.Linear(self.n_nodes, self.dimension))
+            else:  # hidden layers
+                layers.append(nn.Linear(self.n_nodes, self.n_nodes))
             layers.append(nn.ReLU())
         
         t_layers = copy.deepcopy(layers)
+        t_layers.pop(-1)  # pop the last element, which is nn.ReLU()
+
         s_layers = copy.deepcopy(layers)
+        s_layers.pop(-1)  # pop the last element, which is nn.ReLU()
         s_layers.append(nn.Tanh())
 
-        s_net = lambda: nn.Sequential(*s_layers)
-        t_net = lambda: nn.Sequential(*t_layers)
+        #self.s_net = lambda: nn.Sequential(*s_layers)
+        #self.t_net = lambda: nn.Sequential(*t_layers)
 
-        return s_net, t_net
+        """
+        self.s_net = lambda: nn.Sequential(nn.Linear(self.dimension, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.dimension), nn.Tanh())
+        self.t_net = lambda: nn.Sequential(nn.Linear(self.dimension, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.dimension))
 
     def build(self, system):
         """
@@ -77,14 +109,14 @@ class BoltzmannGenerator:
         system : object
             The object of the system of interest. (For example, DoubleWellPotential)
         """
-        s_net, t_net = self.affine_layers()   # build the affine coupling layers
-        mask = torch.from_numpy(np.array([[0, 1], [1, 0]] * self.n_blocks).astype(np.float32))
-        prior = distributions.MultivariateNormal(torch.zeros(self.dimension), torch.eye(self.dimension) * self.prior_sigma) 
-        model = RealNVP(s_net, t_net, mask, prior, system, (self.dimension,))
-
+        self.affine_layers1()   # build the affine coupling layers
+        self.mask = torch.from_numpy(np.array([[0, 1], [1, 0]] * self.n_blocks).astype(np.float32))
+        self.prior = distributions.MultivariateNormal(torch.zeros(self.dimension), torch.eye(self.dimension) * self.prior_sigma) 
+        model = RealNVP(self.s_net, self.t_net, self.mask, self.prior, system, (self.dimension,))
         return model
 
-    def preprocess_data(samples):
+    def preprocess_data(self, samples):
+        self.n_pts = len(samples)   # number of data points
         training_set = samples.astype('float32')
         subdata = data.DataLoader(dataset=training_set, batch_size=self.batch_size)
         batch = torch.from_numpy(subdata.dataset)   # note that subdata.dataset is a numpy array
@@ -112,30 +144,36 @@ class BoltzmannGenerator:
         
         # preprocess the tradining datasets
         if w_loss[0] != 0:                     # w_ML
-            if z_samples is None:
-                print('Error! w_ML is specfied but no samples in the latent space are given.')
-                sys.exit()
-            else:
-                batch_z = self.preprocess_data(z_samples)
-
-        if w_loss[1] != 0 or w_loss[2] != 0:   # w_KL and w_RC
             if x_samples is None:
                 print('Error! w_KL or w_RC is specified but no samples in the configuration space are given.')
                 sys.exit()
             else:
                 batch_x = self.preprocess_data(x_samples)
-            
+
+        if w_loss[1] != 0 or w_loss[2] != 0:   # w_KL and w_RC
+            if z_samples is None:
+                print('Error! w_ML is specfied but no samples in the latent space are given.')
+                sys.exit()
+            else:
+                batch_z = self.preprocess_data(z_samples)
+        
+        # for the ease of coding, we set loss_X as 0 if loss_X is 0
+        loss_ML, loss_KL, loss_RC = w_loss[0], w_loss[1], w_loss[2]
+
         # start training!
         self.loss_list = []
-        for i in tqdm(range(self.n_iteration)):
-            # for the ease of coding, we set loss_X as 0 if loss_X is 0
-            loss_ML, loss_KL, loss_RC = w_loss[0], w_loss[1], w_loss[2]
-
-            loss_ML = model.loss_ML(batch_z)
-            loss_KL = model.loss_KL(batch_x)
-            # loss_KL = model.loss_RC(batch_x)
+        for i in tqdm(range(self.n_iterations)):
+            
+            if w_loss[0] != 0:
+                loss_ML = model.loss_ML(batch_x)
+            if w_loss[1] != 0:
+                loss_KL = model.loss_KL(batch_z)
+            if w_loss[2] != 0:
+                loss_RC = model.loss_RC(batch_x)
 
             loss = w_loss[0] * loss_ML + w_loss[1] * loss_KL + w_loss[2] * loss_RC
+            
+            loss = model.loss_ML(batch_x)
             self.loss_list.append(loss.item())  # convert from 1-element tensor to scalar
 
             # backpropagation
@@ -144,7 +182,8 @@ class BoltzmannGenerator:
             optimizer.step()   # check https://tinyurl.com/y8o2y5e7 for more info
             print("Total loss: %s" % loss.item(), end='\r')
 
-    return model
+        return model
+        
 
     def save(self, model, save_path):
         """
@@ -165,6 +204,48 @@ class BoltzmannGenerator:
         outfile.write('# Pamaeters for training the model\n')
         model_params = copy.deepcopy(vars(self))
         del model_params['params']
+        del model_params['s_net']
+        del model_params['t_net']
+        del model_params['mask']
+        del model_params['prior']
+        del model_params['loss_list']  # use outfile.write instead
         yaml.dump(model_params, outfile, default_flow_style=False)
+        outfile.write('\n# Training result\n')
+        outfile.write('loss: ' + str(self.loss_list))
+
+
+    def load(self, model, load_path):
+        """
+        Loads a trained Boltzmann generator and the training result
+
+        model : objet
+            The object of the model to be trained that is built by Boltzmann.build. 
+            Note that this model must have the same architecture as the trained model
+            to be loaded.
+
+
+        """
+        # load the trained model
+        model.load_state_dict(torch.load(load_path))
+
+        # load the training result (loss_list)
+        f = open(load_path + '.yml', 'r')
+        lines = f.readlines()
+        f.close()
+
+        loss_found = False
+        for l in lines:
+            if 'loss: ' in l:
+                loss_found = True
+                loss_str = l.split('[')[1].split(']')[0].split(',') # a list of string
+                loss = [float(i) for i in loss_str]
+        
+        if loss_found is False:
+            print("Error! Incomplete results stored in %s" % (load_path + '.yml'))
+            sys.exit()
+        
+        print('Total loss: %s' % loss[-1])
+
+        return model, loss
 
 

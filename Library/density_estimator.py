@@ -30,7 +30,7 @@ def density_estimator(x, x_range, weights=None, k=5, optimize=False):
         grid = GridSearchCV(KernelDensity(kernel='gaussian'),
                         {'bandwidth': bandwidths},
                         cv=KFold(n_splits=k))
-        grid.best_estimator_.fit(x[:, None], sample_weight=weights)
+        grid.fit(x[:, None], sample_weight=weights)
         self.bandwidth = grid.best_params_['bandwidth']
         log_p = grid.best_estimator_.score_samples(x_range[:, None])
     else:
