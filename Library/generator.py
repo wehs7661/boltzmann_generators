@@ -33,11 +33,26 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         t           The translation function in the affine coupling layers.
         sys_dim     The dimensionality of the system
         """
+        t = torch.nn.ModuleList([t_net() for _ in range(6)]) 
+        s = torch.nn.ModuleList([s_net() for _ in range(6)])
+        
+        print("s' = ", s[0][0].weight[:5])
+        print("t' = ", t[0][0].weight[:5])
+
+        t = torch.nn.ModuleList([t_net() for _ in range(6)]) 
+        s = torch.nn.ModuleList([s_net() for _ in range(6)])
+        
+        print("s' = ", s[0][0].weight[:5])
+        print("t' = ", t[0][0].weight[:5])
+
         super(RealNVP, self).__init__()  # nn.Module.__init__()
         self.prior = prior 
         self.mask = nn.Parameter(mask, requires_grad=False)  # could try requires_grad=False
         self.t = torch.nn.ModuleList([t_net() for _ in range(len(mask))]) 
-        self.s = torch.nn.ModuleList([s_net() for _ in range(len(mask))]) 
+        self.s = torch.nn.ModuleList([s_net() for _ in range(len(mask))])
+         
+        print("s = ", self.s[0][0].weight[:5])
+        print("t = ", self.t[0][0].weight[:5])
         # nn.ModuleList is basically just like a Python list, used to store a desired number of nn.Module’s.
         # Also note that t[i] and s[i] are entire sequences of operations
         self.system = system # class of what molecular system are we considering. E.g. Ising.
@@ -70,13 +85,6 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             # See equation (9) in the original RealNVP papaer    
             z_ = self.mask[i] * z    # b * x in equation (9)
             s = self.s[i](z_) * (1 - self.mask[i])       # s(b * x) in equation (9)
-            """
-            print("self.s[i] = ", self.s[i])
-            print("z_ = ", z_)
-            print("self.s[i](z_) = ", self.s[i](z_))
-            print("1-self.mask[i] = ", 1-self.mask[i] )
-            print("s = ", s)
-            """
             t = self.t[i](z_) * (1 - self.mask[i])       # t(b * x) in equation (9)
             #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s) +    # equation (9)
             #log_R_xz -= torch.sum(s, -1)
