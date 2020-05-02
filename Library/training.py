@@ -85,6 +85,9 @@ class BoltzmannGenerator:
         self.mask = torch.from_numpy(np.array([[0, 1], [1, 0]] * self.n_blocks).astype(np.float32))
         self.prior = distributions.MultivariateNormal(torch.zeros(self.dimension), torch.eye(self.dimension) * self.prior_sigma) 
         model = RealNVP(self.s_net, self.t_net, self.mask, self.prior, system, (self.dimension,))
+        for key in self.params:
+            setattr(model, key, self.params[key])
+        
         return model
 
     def preprocess_data(self, samples):
