@@ -33,17 +33,6 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         t           The translation function in the affine coupling layers.
         sys_dim     The dimensionality of the system
         """
-        t = torch.nn.ModuleList([t_net() for _ in range(6)]) 
-        s = torch.nn.ModuleList([s_net() for _ in range(6)])
-        
-        print("s' = ", s[0][0].weight[:5])
-        print("t' = ", t[0][0].weight[:5])
-
-        t = torch.nn.ModuleList([t_net() for _ in range(6)]) 
-        s = torch.nn.ModuleList([s_net() for _ in range(6)])
-        
-        print("s' = ", s[0][0].weight[:5])
-        print("t' = ", t[0][0].weight[:5])
 
         super(RealNVP, self).__init__()  # nn.Module.__init__()
         self.prior = prior 
@@ -53,10 +42,12 @@ class RealNVP(nn.Module):  # inherit from nn.Module
          
         print("s = ", self.s[0][0].weight[:5])
         print("t = ", self.t[0][0].weight[:5])
+        
+
         # nn.ModuleList is basically just like a Python list, used to store a desired number of nn.Module’s.
         # Also note that t[i] and s[i] are entire sequences of operations
-        self.system = system # class of what molecular system are we considering. E.g. Ising.
-        self.sys_dim = sys_dim # tuple describing original dim. of system. e.g. Ising Model with N = 8 would be (8,8)
+        self.system = system   # class of what molecular system are we considering. 
+        self.sys_dim = sys_dim # tuple describing original dim. of system
 
     def inverse_generator(self, x, process=False):
         """
