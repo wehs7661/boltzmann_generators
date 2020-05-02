@@ -67,46 +67,11 @@ class BoltzmannGenerator:
         
         return layers
 
+
     def build_networks(self):
-        s_layers = self.affine_layers()
-        s_layers.append(nn.Tanh())
-        self.s_net = lambda: nn.Sequential(*s_layers)
+        self.s_net = lambda: nn.Sequential(*self.affine_layers(), nn.Tanh())
+        self.t_net = lambda: nn.Sequential(*self.affine_layers())
 
-        t_layers = self.affine_layers()
-        self.t_net = lambda: nn.Sequential(*t_layers)
-
-        #t = torch.nn.ModuleList([self.t_net() for _ in range(6)]) 
-        #s = torch.nn.ModuleList([self.s_net() for _ in range(6)])
-
-        #print("s = ", s[0][0].weight[:5])
-        #print("t = ", t[0][0].weight[:5])
-
-
-    def affine_layers1(self):
-        layers = []
-        """
-        for i in range(self.n_layers):
-            if i == 0:  # first layer
-                layers.append(nn.Linear(self.dimension, self.n_nodes))
-            elif i == self.n_layers - 1:  # last layer
-                layers.append(nn.Linear(self.n_nodes, self.dimension))
-            else:  # hidden layers
-                layers.append(nn.Linear(self.n_nodes, self.n_nodes))
-            layers.append(nn.ReLU())
-        
-        t_layers = copy.deepcopy(layers)
-        t_layers.pop(-1)  # pop the last element, which is nn.ReLU()
-
-        s_layers = copy.deepcopy(layers)
-        s_layers.pop(-1)  # pop the last element, which is nn.ReLU()
-        s_layers.append(nn.Tanh())
-
-        self.s_net = lambda: nn.Sequential(*s_layers)
-        self.t_net = lambda: nn.Sequential(*t_layers)
-        """
-        
-        self.s_net = lambda: nn.Sequential(nn.Linear(self.dimension, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.dimension), nn.Tanh())
-        self.t_net = lambda: nn.Sequential(nn.Linear(self.dimension, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.n_nodes), nn.ReLU(), nn.Linear(self.n_nodes, self.dimension))
 
     def build(self, system):
         """
@@ -116,7 +81,7 @@ class BoltzmannGenerator:
         system : object
             The object of the system of interest. (For example, DoubleWellPotential)
         """
-        self.affine_layers1()   # build the affine coupling layers
+        self.build_networks()   # build the affine coupling layers
         self.mask = torch.from_numpy(np.array([[0, 1], [1, 0]] * self.n_blocks).astype(np.float32))
         self.prior = distributions.MultivariateNormal(torch.zeros(self.dimension), torch.eye(self.dimension) * self.prior_sigma) 
         model = RealNVP(self.s_net, self.t_net, self.mask, self.prior, system, (self.dimension,))

@@ -39,15 +39,11 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         self.mask = nn.Parameter(mask, requires_grad=False)  # could try requires_grad=False
         self.t = torch.nn.ModuleList([t_net() for _ in range(len(mask))]) 
         self.s = torch.nn.ModuleList([s_net() for _ in range(len(mask))])
-         
-        print("s = ", self.s[0][0].weight[:5])
-        print("t = ", self.t[0][0].weight[:5])
         
-
         # nn.ModuleList is basically just like a Python list, used to store a desired number of nn.Module’s.
         # Also note that t[i] and s[i] are entire sequences of operations
         self.system = system   # class of what molecular system are we considering. 
-        self.sys_dim = sys_dim # tuple describing original dim. of system
+        self.sys_dim = sys_dim # tuple describing original dim. 
 
     def inverse_generator(self, x, process=False):
         """
