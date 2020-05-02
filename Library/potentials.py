@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
 from matplotlib import rc
 from matplotlib import gridspec
@@ -107,4 +108,148 @@ class DoubleWellPotential:
             plt.scatter(samples[:, 0], self.get_energy(samples.T), color=color, s=0.5)
 
         return fig
+
+class MullerBrownPotential:
+    def __init__(self, alpha = 0.1, A = [-200, -100, -170, 15],
+                                    a = [-1, -1, -6.5, 0.7],
+                                    b = [0, 0, 11, 0.6],
+                                    c = [-10, -10, -6.5, 0.7],
+                                    x_j = [1, 0, -0.5, -1],
+                                    y_j = [0, 0.5, 1.5, 1]):
+        self.alpha = alpha
+        self.A = A
+        self.a = a
+        self.b = b
+        self.c = c
+        self.x_j = x_j
+        self.y_j = y_j
+
+    def get_energy(self, coords):
+        x = coords[0]
+        y = coords[1]
+        if x.dtype == np.float:
+            E = np.zeros(x.shape)
+            for A, a, b, c, xj, yj in zip(self.A, self.a, self.b, self.c, self.x_j, self.y_j):
+                E += A * np.exp(a * (x - xj)**2 + b * (x - xj) * (y - yj) + c * (y - yj)**2)
+            return self.alpha * E
+        elif x.dtype == torch.float:
+            E = torch.zeros(x.shape)
+            for A, a, b, c, xj, yj in zip(self.A, self.a, self.b, self.c, self.x_j, self.y_j):
+                E += A * torch.exp(a * (x - xj)**2 + b * (x - xj) * (y - yj) + c * (y - yj)**2)
+            return self.alpha * E
+        
+    def plot_section(self, **kwargs):
+        
+        if len(kwargs) != 1:
+            print('Error! x or y should fixed.')
+        
+        plt.grid()
+        if 'x' in kwargs:  # x1 is fixed
+            x = kwargs['x']
+            y  = np.linspace(-1.2, 0.8, 200)
+            E = self.get_energy([x, y])
+            plt.plot(y, E)
+            plt.xlabel('$ x_{2} $')
+            plt.ylabel('$ Energy $')
+            plt.title('Section of the muller-brown potential at $ x_{1} $ = %s' % x)
+
+        elif 'y' in kwargs:  # x2 is fixed
+            y = kwargs['y']
+            x = np.linspace(-1, 1, 100)
+            E = self.get_energy([x, y])
+            plt.plot(x, E)
+            plt.xlabel('$ x_{1} $')
+            plt.ylabel('Potential energy $u({x_{1}})$')
+            plt.title('Cross section of the muller-brown potential at $ x_{2} $ = %s' % y)
+
+        elif 'offset_diag' in kwargs:
+            off_set = kwargs['offset_diag']
+            x = np.linspace(-1.2, 0.8, 200)
+            y = -x + off_set
+            xy_data = np.array([x, y]).T
+            x_proj = np.dot(xy_data, np.array([1,-1]))/np.dot(np.array([1,-1]),np.array([1,-1]))
+            E = self.get_energy([x,y])
+            plt.plot(x_proj, E)
+            plt.xlabel('$ x_{1} $')
+            plt.ylabel('Potential energy $u({x_{1}})$')
+            plt.title('Cross section of the muller-brown potential on line x = -y + %s' % off_set)
+
+    def plot_samples(self, samples=None,  fig=None, color='green'):
+        nofig = False
+        if fig is None:
+            nofig = True
+            fig = plt.figure(figsize=(12, 3))
+
+        plt.subplot(1, 2, 1)
+        if nofig is True:
+            self.plot_FES()
+        if samples is not None:
+            plt.scatter(samples[:, 0], samples[:, 1], color=color, s=0.5)
+        
+        plt.subplot(1, 2, 2)
+        if nofig is True:
+            self.plot_section(offset_diag=0.5)
+        if samples is not None:
+            x = samples[:, 0]
+            y = samples[:, 1]
+            xy_data = np.array([x, y]).T
+            x_proj = np.dot(xy_data, np.array([1,-1]))/np.dot(np.array([1,-1]),np.array([1,-1]))
+            plt.scatter(x_proj, self.get_energy(samples.T), color=color, s=0.5)
+
+        return fig
+
+    def plot_FES(self):
+        x = np.linspace(-1.5, 1.25, 100)
+        y = np.linspace(-0.5, 2, 100)
+        X, Y = np.meshgrid(x, y)
+        E = self.get_energy([X, Y])
+
+        plt.contourf(X, Y, E, 500, cmap = "jet", vmin = -10, vmax = -3)
+        plt.xlabel('$ x_{1} $')
+        plt.ylabel('$ x_{2} $')
+        plt.title('Contour plot of the muller-brown potential')
+        clb = plt.colorbar()
+        clb.ax.set_title(r'$H(x)$')
+
+class DimerSimulation:
+    def __init__(self, epsilon = 1.0, sigma = 1.1, k_d = 20, d0 = 1.5, a = 25, \
+                 b = 10, c = -0.5, l_box = 3, k_box = 100, harmonic_centering = True):
+        self.epsilon = epsilon
+        self.sigma = sigma
+        self.k_d = k_d
+        self.d0 = d0
+        self.a = a
+        self.b = b
+        self.c = c
+        self.l_box = l_box
+        self.k_box = k_box
+        self.harmonic_centering = harmonic_centering
+
+    def get_energy(self, coords):
+        U = 0
+        d = np.linalg.norm(coords[0, :] - coords[1, :])
+        
+        # Bond Potential
+        U += 1/4*self.a*(d - self.d0)**4 - 1/2*self.b*(d - self.d0)**2 + self.c*(d - self.d0)
+        if self.harmonic_centering:
+            U += self.k_d*(coords[0, 0] + coords[0, 1]) ** 2
+            U += self.k_d*(coords[1, 0] ** 2 + coords[1, 1] ** 2)            
+        for i in range(len(coords)):
+            
+            # Boundary Conditions
+            if abs(coords[i, 0]) >= self.l_box:
+                U += self.k_box*(abs(coords[i,0]) - self.l_box)**2
+            if abs(coords[i, 1]) >= self.l_box:
+                U += self.k_box*(abs(coords[i, 1]) - self.l_box)**2
+
+            # LJ Interactions
+            for j in range(2, len(coords)):
+                if i == j:
+                    continue
+                d = coords[i, :] - coords[j, :]
+                U += self.epsilon * (self.sigma**2 / np.dot(d,d))**6
+        return U
+
+
+
 

@@ -11,7 +11,7 @@ def make_2D_traj_potential(x_traj, potential, xlim, ylim, min = -10, max = -3, f
     for i in range(len(X)):
         z = []
         for j in range(len(X)):
-            v = potential([X[i,j], Y[i,j]])
+            v = potential(np.array([X[i,j], Y[i,j]]))
             z.append(v)
         Z.append(z)
     Z = np.array(Z)
@@ -65,7 +65,7 @@ def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, mark
     for i in range(len(X)):
         z = []
         for j in range(len(X)):
-            v = potential([X[i,j], Y[i,j]])
+            v = potential(np.array([X[i,j], Y[i,j]]))
             z.append(v)
         Z.append(z)
     Z = np.array(Z)
@@ -74,3 +74,29 @@ def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, mark
     plt.clim(min,max)
     plt.ylabel("$x_2$")
     plt.xlabel("$x_1$")
+
+def make_2D_traj_bond(x_traj, box, bonds, fps = 30, markersize = 8, color = 'red'):
+    fps = fps
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sct, = ax.plot([], [], "o", markersize=markersize, color = color)
+    bct, = ax.plot([], [], color = color, linewidth=markersize/3)
+    # pct, = ax.plot([], [], "o", markersize=8)
+
+    def update_graph(i, xa, ya): # , vx, vy):
+        sct.set_data(xa[i], ya[i])
+        for bond in bonds:
+            bct.set_data([xa[i][bond[0]], xa[i][bond[1]]], [ya[i][bond[0]], ya[i][bond[1]]])
+
+
+
+    x_lim = box[0]/2 
+    y_lim = box[1]/2
+    ax.set_xlim([-x_lim, x_lim])
+    ax.set_ylim([-y_lim, y_lim])
+    ax.set_xlabel("X axis")
+    ax.set_ylabel("Y axis")
+    video_traj = x_traj
+    ani = animation.FuncAnimation(fig, update_graph, video_traj.shape[0], fargs=(video_traj[:,:,0], video_traj[:,:,1]), interval=1000/fps)
+    plt.rcParams['animation.html'] = 'html5'
+    return(ani)

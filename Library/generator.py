@@ -168,8 +168,8 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         # but we do need u_x in the calculation of J_kl, see the method 'loss_KL'
         # we need u_x to caluculate the weighs for calculation expecatation in the confiugration space
         u_x = self.calculate_energy(batch_x, space='configuration')
-        weights_x = torch.exp(-u_x)
-        J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz, weights=weights_x)
+        # weights_x = torch.exp(-u_x)
+        J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz, weights = torch.ones(u_x.shape))
 
         return J_ml
 
@@ -188,13 +188,14 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         J_kl : torch.Tensor
             The loss function J_KL
         """
+        # import pdb
+        # pdb.set_trace()
         x, log_R_zx = self.generator(batch_z)
         u_x = self.calculate_energy(x, space='configuration')   # we need this to calculate J_kl
         # we need u_z to caluculate the weighs for calculation expecatation in the latant space
-        u_z = self.calculate_energy(batch_z, space='latent')
-        weights_z = torch.exp(-u_z)
-        J_kl = self.expectation(u_x - log_R_zx, weights=weights_z)
-
+        # u_z = self.calculate_energy(batch_z, space='latent')
+        # weights_z = torch.exp(-u_z)
+        J_kl = self.expectation(u_x - log_R_zx, weights = torch.ones(u_x.shape))
         return J_kl
 
     def loss_RC(self):
@@ -217,12 +218,11 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             Whether to calcualte the energy in the real space (x) or the 
             latent space (z). Available options: 'latent' or 'configuration'.
         """
-
         energy = batch.new_zeros(batch.shape[0])  # like np.zeros, same length as batch_data
         if space == 'configuration':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
-                energy[i] = self.regularize_energy(self.system.get_energy(config.detach().numpy()))
+                energy[i] = self.regularize_energy(self.system.get_energy(config))
                 # import pdb
                 # pdb.set_trace()
                 # regularize the energy (see page 3 in the SI)
@@ -238,14 +238,13 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         else:
             print("Error! Unavailable option of parameter 'space' specificed.")
             sys.exit()
-
         return energy
 
-    def regularize_energy(self, energy, e_high = 10 ** 4, e_max = 10 ** 20):
+    def regularize_energy(self, energy, e_high = 10 ** 8, e_max = 10 ** 20):
         if energy.item() > e_high:
-            energy = e_high + np.log10(energy - e_high + 1)
+            energy = e_high + torch.log10(energy - e_high + 1)
         elif energy.item() > e_max:
-            energy= e_high + np.log10(e_max - e_high + 1)
+            energy= e_high + torch.log10(e_max - e_high + 1)
         return energy
 
 
