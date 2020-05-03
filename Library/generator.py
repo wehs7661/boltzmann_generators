@@ -29,8 +29,8 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         ----------
         prior       The prior probability distribution in the latent space (generally a normal distribution)
         mask        The masking scheme for affine coupling layers.
-        s           The scaling function in the affine coupling layers.
-        t           The translation function in the affine coupling layers.
+        s           The scaling function/network in the affine coupling layers for all the NVP blocks.
+        t           The translation function/network in the affine coupling layers for all the NVP blocks.
         sys_dim     The dimensionality of the system
         """
 

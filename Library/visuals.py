@@ -6,6 +6,7 @@ from matplotlib import rc
 from matplotlib import gridspec
 from torch import distributions
 from scipy.stats import multivariate_normal
+from density_estimator import density_estimator
 
 rc('font', **{
     'family': 'sans-serif',
@@ -75,6 +76,10 @@ class BoltzmannPlotter:
         return z, z_list
 
     def generator_result(self, save_path):
+        """
+        save_path : str
+            The directory where the model will be saved (along with the filename)
+        """
 
         fig = plt.subplots(1, 4, figsize=(25, 5))
 
@@ -272,41 +277,107 @@ class BoltzmannPlotter:
         fig[0].tight_layout()
         plt.savefig(save_path, dpi=600)
 
-    def free_energy_profile(self, save_path, n_z1, n_z2):
+    def config_histogram(self, samples, n_bins=None, weights=None):
         """
+        n_bins : int
+            Number of bins for the histogram methods. The default is 1/500 of the
+            number of samples.
+        """
+        if n_bins is None:
+            n_bins = int(len(samples) / 500)
+
+        counts, bins =np.histogram(samples, bins=n_bins, weights=weights)
+        p = counts / np.sum(counts)   # the approximation of probability, px(x)
+        centers = np.array([0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)])  # x values
         
+        return p, centers
 
-        """
-
-
-
-
-        z_f = prior.sample_n(100000)
-        x_f, log_R_zx = model_ML.generator((z_f))
-        x_f = x_f.detach().numpy()
-    
-        u_x = model_ML.calculate_energy(torch.from_numpy(x_f), space='configuration')
-        u_z = model_ML.calculate_energy(z_f, space='latent')
+    def statistical_weights(self, x_samples, z_samples, log_R_zx):
+        u_x = self.model.calculate_energy(torch.from_numpy(x_samples), space='configuration')
+        u_z = self.model.calculate_energy(z_samples, space='latent')
         w = torch.exp(-u_x + u_z + log_R_zx)
         w = w.detach().numpy()
 
-        counts, bins = np.histogram(x_f[:, 0], bins=200)
-        probs = counts / np.sum(counts)  # p_x(x)
-        centers = np.array([0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)])  # x
+        return w
 
-        f = -np.log(probs)
-        f -= np.min(f)
+    def free_energy_profile(self, save_path, n_z1, n_z2=None, optimize=False):
+        """
+        This methods plots the free energy profile based on three ways, including 
+        standard histograms, weighted histograms, and kernel density estimation (KDE).
 
-        plt.figure()
-        plt.scatter(centers, f)
+        Parameters
+        ----------
+        n_z1 : int
+            Number of samples drawn from the prior Gaussian distribution in the latent
+            space for the histogram methods.
+        n_z2 : int 
+            Number of samples drawn from the prior Gaussian distribution in the latent
+            sapce for the kernel density estimation method. The default is 1% of n_z1.
+        
+        """
+        if n_z2 is None:
+            n_z2 = int(0.01 * n_z1)
+        
+        # analytical solution
+        if type(self.system).__name__ == 'DoubleWellPotential':
+            x_analytical  = np.linspace(-3, 3, 100)
+            f_analytical = self.system.get_energy([x_analytical, 0]) - np.log(np.sqrt(np.pi))
+            f_analytical -= self.system.get_energy(self.system.min_left)
+
+        # Part 1: histogram methods
+        # Part 1-1: standard histograms
+        z1 = self.model.prior.sample_n(n_z1)
+        x1, log_R_zx1 = self.model.generator(z1)
+        x1 = x1.detach().numpy()
+        
+        p1, centers1 = self.config_histogram(x1[:, 0])
+        f1 = -np.log(p1)
+        f1 -= np.min(f1)
+        
+        fig = plt.subplots(1, 3, figsize=(18, 4.5))
+        plt.subplot(1, 3, 1)
+        plt.scatter(centers1, f1, label='Estimated')
+        plt.plot(x_analytical, f_analytical, label='Exact')
+        plt.xlabel("$x_{1}$")
+        plt.ylabel("Free energy $f$")
+        plt.title("Free energy based on the standard histogram")
+        plt.legend()
+        plt.grid()
+
+        # Part 1-2: weighted histogram
+        w1 = self.statistical_weights(x1, z1, log_R_zx1)   # first calculate the statistical weights
+        p2, centers2 = self.config_histogram(x1[:, 0], weights=w1)
+        f2 = -np.log(p2)
+        f2 -= np.min(f2)
+
+        plt.subplot(1, 3, 2)
+        plt.scatter(centers2, f2, label='Estimated')
+        plt.plot(x_analytical, f_analytical, label='Exact')
+        plt.xlabel("$x_{1}$")
+        plt.ylabel("Free energy $f$")
+        plt.title("Free energy based on the weighted histogram")
+        plt.legend()
+        plt.grid()
+
+        # Part 2: kernel density estimation (KDE)
+        z2 = self.model.prior.sample_n(n_z2)
+        x2, log_R_zx2 = self.model.generator(z2)
+        x2 = x2.detach().numpy()
+
+        w2 = self.statistical_weights(x2, z2, log_R_zx2)
+        x_range = np.linspace(-3, 3, len(x2[:, 0] - 1))
+        p2, log_p2 = density_estimator(x2[:, 0], x_range, w2, optimize=optimize)  # KDE
+
+        f2 = -log_p2
+        f2 -= np.min(f2)
+
+        plt.subplot(1, 3, 3)
+        plt.plot(x_range, f2, label='Estimated')
+        plt.plot(x_analytical, f_analytical, label='Exact')
         plt.xlabel("$x_{1}$")
         plt.ylabel("Free energy $f$")
         plt.title("Free energy as a function of $x_{1}$")
+        plt.legend()
         plt.grid()
-        #doublewell.plot_section(y=0)
 
-x1  = np.linspace(-3, 3, 100)
-f_analytical = doublewell.get_energy([x1, 0]) - np.log(np.sqrt(np.pi))
-f_analytical -= doublewell.get_energy([-1.7723034076580755, 0.0])
-plt.plot(x1, f_analytical)
-plt.savefig('../Project/Pictures/DWP_free_energy_unweighted.png', dpi=600)
+        plt.savefig(save_path, dpi=600)
