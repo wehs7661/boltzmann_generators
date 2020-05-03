@@ -271,3 +271,42 @@ class BoltzmannPlotter:
 
         fig[0].tight_layout()
         plt.savefig(save_path, dpi=600)
+
+    def free_energy_profile(self, save_path, n_z1, n_z2):
+        """
+        
+
+        """
+
+
+
+
+        z_f = prior.sample_n(100000)
+        x_f, log_R_zx = model_ML.generator((z_f))
+        x_f = x_f.detach().numpy()
+    
+        u_x = model_ML.calculate_energy(torch.from_numpy(x_f), space='configuration')
+        u_z = model_ML.calculate_energy(z_f, space='latent')
+        w = torch.exp(-u_x + u_z + log_R_zx)
+        w = w.detach().numpy()
+
+        counts, bins = np.histogram(x_f[:, 0], bins=200)
+        probs = counts / np.sum(counts)  # p_x(x)
+        centers = np.array([0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)])  # x
+
+        f = -np.log(probs)
+        f -= np.min(f)
+
+        plt.figure()
+        plt.scatter(centers, f)
+        plt.xlabel("$x_{1}$")
+        plt.ylabel("Free energy $f$")
+        plt.title("Free energy as a function of $x_{1}$")
+        plt.grid()
+        #doublewell.plot_section(y=0)
+
+x1  = np.linspace(-3, 3, 100)
+f_analytical = doublewell.get_energy([x1, 0]) - np.log(np.sqrt(np.pi))
+f_analytical -= doublewell.get_energy([-1.7723034076580755, 0.0])
+plt.plot(x1, f_analytical)
+plt.savefig('../Project/Pictures/DWP_free_energy_unweighted.png', dpi=600)

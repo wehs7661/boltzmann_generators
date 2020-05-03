@@ -120,14 +120,14 @@ class BoltzmannGenerator:
         # preprocess the tradining datasets
         if w_loss[0] != 0:                     # w_ML
             if x_samples is None:
-                print('Error! w_KL or w_RC is specified but no samples in the configuration space are given.')
+                print('Error! w_ML is specfied but no samples in the configuration space are given.')
                 sys.exit()
             else:
                 batch_x = self.preprocess_data(x_samples)
 
         if w_loss[1] != 0 or w_loss[2] != 0:   # w_KL and w_RC
             if z_samples is None:
-                print('Error! w_ML is specfied but no samples in the latent space are given.')
+                print('Error! w_KL or w_RC is specified but no samples in the latent space are given.')
                 sys.exit()
             else:
                 batch_z = self.preprocess_data(z_samples)
@@ -154,8 +154,6 @@ class BoltzmannGenerator:
             loss.backward(retain_graph=True)
             optimizer.step()   # check https://tinyurl.com/y8o2y5e7 for more info
             print("Total loss: %s" % loss.item(), end='\r')
-
-        return model
         
 
     def save(self, model, save_path):
