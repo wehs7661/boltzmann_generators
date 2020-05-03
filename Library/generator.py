@@ -126,7 +126,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         else:
             return x, log_R_zx
         
-    def loss_ML(self, batch_x):
+    def loss_ML(self, batch_x, weighted=True):
         """
         Calculates   the loss function when training by example (samples from the configuration space)
         J_ML = E[u_z(z) - log Rxz(x)], where u_z(z) = 0.5 * /(sigma^{2}) * z^{2} (sigma = 1)
@@ -135,24 +135,27 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         ----------
         batch_x : torch.Tensor
             A batch of samples in the configuration space.
-        
+        weighte : bool
+            Whether the samples are already Boltzmann-weighted, i.e. drawn from MC simulations 
+            without removing duplicates of configurations
+
         Returns
         -------
         J_ml : torch.Tensor
             The loss function J_ML
         """
         z, log_R_xz = self.inverse_generator(batch_x)
-        # we don't need u_z in the calculation of J_ml
-        # but we do need u_x in the calculation of J_kl, see the method 'loss_KL'
-        # we need u_x to caluculate the weighs for calculation expecatation in the confiugration space
-        u_x = self.calculate_energy(batch_x, space='configuration')  
         u_z = self.calculate_energy(z, space='latent') 
-        weights_x = torch.exp(-u_x) 
-        J_ml = self.expectation(u_z - log_R_xz, weights=weights_x)
+        if weighted is True:
+            J_ml = self.expectation(u_z - log_R_xz)
+        else:
+            u_x = self.calculate_energy(batch_x, space='configuration')  
+            weights_x = torch.exp(-u_x) 
+            J_ml = self.expectation(u_z - log_R_xz, weights=weights_x)
 
         return J_ml
 
-    def loss_KL(self, batch_z):
+    def loss_KL(self, batch_z, weighted=True):
         """
         Calculates the loss function when training by energy (samples from the latent space)
         J_KL = E[u_x(x) - log Rzx(z)]
@@ -169,10 +172,12 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         """
         x, log_R_zx = self.generator(batch_z)
         u_x = self.calculate_energy(x, space='configuration')   # we need this to calculate J_kl
-        # we need u_z to caluculate the weighs for calculation expecatation in the latant space
-        u_z = self.calculate_energy(batch_z, space='latent')
-        weights_z = torch.exp(-u_z)  
-        J_kl = self.expectation(u_x - log_R_zx, weights=weights_z)
+        if weighted is True:
+            J_kl = self.expectation(u_x - log_R_zx)
+        else:
+            u_z = self.calculate_energy(batch_z, space='latent')
+            weights_z = torch.exp(-u_z)  
+            J_kl = self.expectation(u_x - log_R_zx, weights=weights_z)
 
         return J_kl
 
@@ -253,7 +258,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
 
         return energy
 
-    def expectation(self, observable, weights):
+    def expectation(self, observable, weights=None):
         """ 
         Calculate the expectation value of an observable
         
@@ -268,7 +273,10 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             Expectation value as a one-element tensor
         """
         # e = torch.dot(observable, weights) / torch.sum(weights) #the same as below
-        e = torch.sum(observable * weights) / torch.sum(weights)
+        if weights is None:
+            e = observable.mean()
+        else:
+            e = torch.sum(observable * weights) / torch.sum(weights)
         return e
 
         

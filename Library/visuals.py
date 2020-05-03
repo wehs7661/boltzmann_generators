@@ -39,13 +39,13 @@ class BoltzmannPlotter:
         if self.prior is None:
             self.prior = distributions.MultivariateNormal(torch.zeros(2), torch.eye(2)) 
 
-        # below we set up a list of 12 colors that look distinct with the colors
+        # below we set up a list of 102 colors that look distinct with the colors
         # of the contour plot
         ncolors = 10  # number of distinct colors
         first_rgb , last_rgb = 50, 225
         cmap = plt.cm.jet  
         colors = ['red', 'silver']  # first two colors
-        colors.append([cmap(i) for i in np.linspace(first_rgb, last_rgb, ncolors).astype(int)])
+        colors += [cmap(i) for i in np.linspace(first_rgb, last_rgb, ncolors).astype(int)]
         self.colors = np.array(colors)
 
 
@@ -65,8 +65,11 @@ class BoltzmannPlotter:
         ax = plt.gca()
         ax.set_aspect('equal')
 
-    def transform_x_samples(self, x_samples):
-        z, _, z_list = self.model.inverse_generator(torch.from_numpy(x_samples.astype('float32')), process=True)
+    def transform_x_samples(self, x_samples, process=False):
+        """
+        x_samples : np.array
+        """
+        z, _, z_list = self.model.inverse_generator(torch.from_numpy(x_samples.astype('float32')), process=process)
         z = z.detach().numpy()
 
         return z, z_list
@@ -89,7 +92,7 @@ class BoltzmannPlotter:
         z_generated = []
         self.z_generated_list = []   # for plotting "map_to_latent"
         for i in range(len(self.x_samples)):
-            z, z_list = self.transform_x_samples(self.x_samples[i])
+            z, z_list = self.transform_x_samples(self.x_samples[i], True)
             z_generated.append(z)
             self.z_generated_list.append(z_list)  # will not be used in this method but useful for other methods
         
@@ -200,5 +203,71 @@ class BoltzmannPlotter:
             ax.set_aspect(0.58)
     
         plt.savefig(save_path, dpi=600)
+    
+    def latent_interpolation(self, save_path, n_path=10, x1=None, x2=None):
+        """
 
+        Parameters
+        ----------
+        n_path : int
+            Number of reaction paths to plot. (Also the number of linear interpolations.)
 
+        """
+        # Part 1-1: randomly choose points near the minima (the first point of x1 and x2 are minima)
+        if type(self.system).__name__ == 'DoubleWellPotential':
+            x1 = np.ones([n_path,2]) * self.system.min_left 
+            x2 = np.ones([n_path,2]) * self.system.min_right
+        else:
+            if x1 is None or x2 is None:
+                print("Error! No data points or type of system provided!")
+            else:
+                x1 = np.ones([n_path,2]) * x1 
+                x2 = np.ones([n_path,2]) * x2 
+
+        x1 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
+        x2 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
+        
+        # Part 1-2: plot the samples x1, x2
+        fig = plt.subplots(1, 3, figsize=(18, 4.5))
+        plt.subplot(1, 3, 1)
+        self.system.plot_FES()
+        plt.scatter(x1[:, 0], x1[:, 1], color=self.colors[0], s=1)
+        plt.scatter(x2[:, 0], x2[:, 1], color=self.colors[1], s=1)
+        ax = plt.gca()
+        ax.set_aspect(0.58)
+
+        # Part 2-1: map the samples from the configuration space to latent space
+        z1, _ = self.model.inverse_generator(torch.from_numpy(x1.astype('float32')))
+        z2, _ = self.model.inverse_generator(torch.from_numpy(x2.astype('float32')))
+        z1 = z1.detach().numpy()
+        z2 = z2.detach().numpy()
+        
+        # Part 2-2: peform linear interoplation and plot the samples in the latent space
+        # z_samples contains 100 points on each line connected by each pair of points in z1 and z2
+        z_samples = torch.Tensor(np.linspace(z1, z2, 100, axis=1))
+        z = z_samples.detach().numpy()  # for plotting
+        plt.subplot(1, 3, 2)
+        self.binormal_contour()
+        for i in range(len(z)):
+            if len(z) > len(self.colors):
+                plt.scatter(z[i][:, 0], z[i][:, 1], s=1)
+            else:
+                plt.scatter(z[i][:, 0], z[i][:, 1], color=self.colors[i], s=1)
+        plt.xlim([-3, 3])
+        plt.ylim([-3, 3])
+
+        # map the samples back to the configuration space (use z_samples) and plot 
+        plt.subplot(1, 3, 3)
+        self.system.plot_FES()
+        for i in range(len(z_samples)):
+            x_gen, _ = self.model.generator(z_samples[i])
+            x_gen = x_gen.detach().numpy()
+            if len(z_samples) > len(self.colors):
+                plt.scatter(x_gen[:, 0], x_gen[:, 1], s=1)
+            else:
+                plt.scatter(x_gen[:, 0], x_gen[:, 1], color=self.colors[i], s=1)
+        ax = plt.gca()
+        ax.set_aspect(0.58)
+
+        fig[0].tight_layout()
+        plt.savefig(save_path, dpi=600)
