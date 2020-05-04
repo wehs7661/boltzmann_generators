@@ -3,7 +3,6 @@ import copy
 import numpy as np 
 import torch
 import torch.nn as nn
-import density_estimator
 
 class RealNVP(nn.Module):  # inherit from nn.Module
     def __init__(self, s_net, t_net, mask, prior, system, sys_dim):
@@ -181,16 +180,16 @@ class RealNVP(nn.Module):  # inherit from nn.Module
 
         return J_kl
 
-    def loss_RC(self, batch_RC, bounds):
+    def loss_RC(self, batch_RC, estimator, weighted=True):
         """
         Calculates the reaction coordinate loss function. J_RC = E[logp(RC)].
 
         Parameters
         ----------
         batch_RC : np.array
-            A batch of samples along the reaction coordinate
-        bounds : list
-            The upper bound and the lower bound of the reaction coordinate
+            A batch of samples along the reaction coordinate (in the configuration space).
+        estimator : sklearn.neighbors.KernelDensity object
+            A kernel density estimator to estimate the probability of the samples
         
         Returns
         -------
@@ -201,13 +200,13 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         ----
         At the current stage, this method might only work for DWP.
         """
-        RC_range = np.linspace(bounds[0], bunds[1], len(batch_RC))
-        p, log_p = density_estimator(batch_RC, RC_range)
-        x2 = np.zeros(len(RC_range))
-        RC_data = torch.from_numpy(np.column_stack((RC_range, x2)))
-        u_rc = self.calculate_energy(RC_data, space='configuration')
-        weights_rc = torch.exp(-u_rc)
-        J_rc = self.expectation(log_p, weights=weights_rc)
+        log_p = estimator.score_samples(batch_RC[:, 0][:, None])
+        if weighted is True:
+            J_rc = self.expectation(log_p)
+        else:
+            u_rc = self.calculate_energy(batch_RC, space='configuration')
+            weights_rc = torch.exp(-u_rc)
+            J_rc = self.expectation(log_p, weights=weights_rc)
 
         return J_rc
 
@@ -278,6 +277,4 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         else:
             e = torch.sum(observable * weights) / torch.sum(weights)
         return e
-
-        
 
