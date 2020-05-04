@@ -10,6 +10,7 @@ from torch.utils import data
 from torch import distributions
 from generator import RealNVP
 from collections import OrderedDict
+from density_estimator import density_estimator
 
 # the following two functions and setup_yaml() are for preserving the
 # order of the dictionary to be printed to the parameter yaml file
@@ -38,7 +39,7 @@ class BoltzmannGenerator:
         ----------
         model_params : dict
             A dictionary of the model parameters, including the n_blocks, dimension, 
-            n_nodes, n_layers, n_iteration, batch_size, LR and prior_sigma.
+            n_nodes, n_layers, n_epochs, batch_size, LR and prior_sigma.
 
         Attributes
         ----------
@@ -46,7 +47,7 @@ class BoltzmannGenerator:
         params      (dict) The model parameters.
         """
         defaults = {'n_blocks': 3, 'dimension': 2, 'n_nodes': 100, 'n_layers': 3,
-                    'n_iterations': 200, 'batch_size': 1000, 'LR': 0.001, 'prior_sigma': 1}
+                    'n_epochs': 200, 'batch_size': 2048, 'LR': 0.001, 'prior_sigma': 1}
 
         if model_params is None:
             self.params = defaults
@@ -120,13 +121,14 @@ class BoltzmannGenerator:
         model : object
             An RealNVP object, which is an untrained Boltzmann generator.
         """
+        self.system = system
         self.build_networks()   # build the affine coupling layers
         self.mask = torch.from_numpy(
             np.array([[0, 1], [1, 0]] * self.n_blocks).astype(np.float32))
         self.prior = distributions.MultivariateNormal(torch.zeros(
             self.dimension), torch.eye(self.dimension) * self.prior_sigma)
         model = RealNVP(self.s_net, self.t_net, self.mask,
-                        self.prior, system, (self.dimension,))
+                        self.prior, self.system, (self.dimension,))
         for key in self.params:
             setattr(model, key, self.params[key])
 
@@ -149,12 +151,10 @@ class BoltzmannGenerator:
         training_set = samples.astype('float32')
         subdata = data.DataLoader(
             dataset=training_set, batch_size=self.batch_size)
-        # note that subdata.dataset is a numpy array
-        batch = torch.from_numpy(subdata.dataset)
 
-        return batch
+        return subdata
 
-    def train(self, model, w_loss, x_samples=None, z_samples=None, optimizer=None):
+    def train(self, model, w_loss, x_samples=None, z_samples=None, optimizer=None, KDE_optimize=False):
         """
         Trains a Boltzmann generator. This method does not return anything, but the 
         parameters in the input model will be adjusted based on the training.
@@ -171,52 +171,70 @@ class BoltzmannGenerator:
             The training data set in the latent space for training the generator. 
         optimizer : object
             The object of the optimizer for gradient descent method.
+        KDE_optimize : bool
+            Whether to optimize the bandwitch when using KDE to estimate the probability
+            distributions for RC loss calculation.
         """
         if optimizer is None:
             optimizer = torch.optim.Adam(
                 [p for p in model.parameters() if p.requires_grad == True], lr=self.LR)
 
-        # preprocess the tradining datasets
-        if w_loss[0] != 0:                     # w_ML
+        # preprocess the training datasets
+        if w_loss[0] != 0 or w_loss[2] != 0:    # calculations of J_ML and J_RC requires x_samples
             if x_samples is None:
                 print(
                     'Error! w_ML is specfied but no samples in the configuration space are given.')
                 sys.exit()
             else:
-                batch_x = self.preprocess_data(x_samples)
+                subdata_x = self.preprocess_data(x_samples)
 
-        if w_loss[1] != 0 or w_loss[2] != 0:   # w_KL and w_RC
+            if w_loss[1] == 0 and z_samples is None:
+                # when only training on J_ML, we don't need z_samples but we need to make 
+                # up subdata_z to enable zip function in the training loop. subdata_z could 
+                # be any iterable, since w_loss[1] == 0 and w_loss[2] == 0, subdata_z won't be trained anyway
+                subdata_z = np.zeros(len(subdata_x))
+
+        if w_loss[1] != 0:   # Calculation of J_KL reqruies z_samples
             if z_samples is None:
                 print(
                     'Error! w_KL or w_RC is specified but no samples in the latent space are given.')
                 sys.exit()
             else:
-                batch_z = self.preprocess_data(z_samples)
+                subdata_z = self.preprocess_data(z_samples)
+
+            if (w_loss[0] == 0 and w_loss[2] == 0) and x_samples is None:
+                # Similarly, we don't need x_samples if w_ML and w_RC are both 0, we don't need x_samples
+                # but we still need to make up subdata_x
+                subdata_x = np.zeros(len(subdata_z))
 
         # for the ease of coding, we set loss_X as 0 if loss_X is 0
         loss_ML, loss_KL, loss_RC = w_loss[0], w_loss[1], w_loss[2]
 
+
         # start training!
-        self.loss_list = []
-        for i in tqdm(range(self.n_iterations)):
+        self.loss_iteration = []   # the loss of each iteration
+        estimator = density_estimator(x_samples[:, 0], optimize=KDE_optimize) 
 
-            if w_loss[0] != 0:
-                loss_ML = model.loss_ML(batch_x)
-            if w_loss[1] != 0:
-                loss_KL = model.loss_KL(batch_z)
-            if w_loss[2] != 0:
-                loss_RC = model.loss_RC(batch_x)
+        for i in tqdm(range(self.n_epochs)):
+            for batch_x, batch_z in zip(subdata_x, subdata_z):  # iterations
+                if w_loss[0] != 0:
+                    loss_ML = model.loss_ML(batch_x)
+                if w_loss[1] != 0:
+                    loss_KL = model.loss_KL(batch_z)
+                if w_loss[2] != 0:
+                    loss_RC = model.loss_RC(batch_x, estimator)
 
-            loss = w_loss[0] * loss_ML + w_loss[1] * \
-                loss_KL + w_loss[2] * loss_RC
-            # convert from 1-element tensor to scalar
-            self.loss_list.append(loss.item())
+                loss = w_loss[0] * loss_ML + w_loss[1] * \
+                    loss_KL + w_loss[2] * loss_RC   # the loss of a iteration
 
-            # backpropagation
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()   # check https://tinyurl.com/y8o2y5e7 for more info
-            print("Total loss: %s" % loss.item(), end='\r')
+                # convert from 1-element tensor to scalar
+                self.loss_iteration.append(loss.item())
+
+                # backpropagation
+                optimizer.zero_grad()
+                loss.backward(retain_graph=True)
+                optimizer.step()   # check https://tinyurl.com/y8o2y5e7 for more info
+                print("Total loss: %s" % loss.item(), end='\r')
 
     def save(self, model, save_path, previous_loss=None):
         """
@@ -246,13 +264,13 @@ class BoltzmannGenerator:
         del model_params['t_net']
         del model_params['mask']
         del model_params['prior']
-        del model_params['loss_list']  # use outfile.write instead
+        del model_params['loss_iteration']  # use outfile.write instead
         yaml.dump(model_params, outfile, default_flow_style=False)
         outfile.write('\n# Training result\n')
 
         if previous_loss is not None:
-            self.loss_list = previous_loss + self.loss_list
-        outfile.write('loss: ' + str(self.loss_list))
+            self.loss_iteration = previous_loss + self.loss_iteration
+        outfile.write('loss: ' + str(self.loss_iteration))
 
     def load(self, model, load_path):
         """
@@ -268,7 +286,7 @@ class BoltzmannGenerator:
         # load the trained model
         model.load_state_dict(torch.load(load_path))
 
-        # load the training result (loss_list)
+        # load the training result (loss_iteration)
         f = open(load_path + '.yml', 'r')
         lines = f.readlines()
         f.close()

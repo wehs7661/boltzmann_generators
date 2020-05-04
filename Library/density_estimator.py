@@ -4,7 +4,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold
 
 
-def density_estimator(x, x_range, weights=None, k=5, optimize=False):
+def density_estimator(x, weights=None, k=10, optimize=False):
     """
     Calculates the probability density given input data samples.
 
@@ -12,8 +12,6 @@ def density_estimator(x, x_range, weights=None, k=5, optimize=False):
     ----------
     x : np.array
         Input data.
-    x_range : np.array
-        The range of the probability density to be calculated.
     weights : np.array
         List of sample weights attached to the data x.
     k : int
@@ -23,10 +21,7 @@ def density_estimator(x, x_range, weights=None, k=5, optimize=False):
 
     Returns
     -------
-    p : np.array
-        The probability density of the given range x_range.
-    log_p : np.array
-        The log of probability density of the given range x_range.
+    estimator : 
     """
     if optimize is True:
         bandwidths = 10 ** np.linspace(-1, 1, 100)
@@ -35,12 +30,15 @@ def density_estimator(x, x_range, weights=None, k=5, optimize=False):
                             cv=KFold(n_splits=k))
         grid.fit(x[:, None], sample_weight=weights)
         #self.bandwidth = grid.best_params_['bandwidth']
-        log_p = grid.best_estimator_.score_samples(x_range[:, None])
+        #log_p = grid.best_estimator_.score_samples(x_range[:, None])
+        estimator = grid.best_estimator_
     else:
         #self.bandwidth = 0.5
-        kde = KernelDensity(bandwidth=0.5, kernel='gaussian')
+        kde = KernelDensity(bandwidth=0.1, kernel='gaussian')
         kde.fit(x[:, None], sample_weight=weights)
-        log_p = kde.score_samples(x_range[:, None])
-    p = np.exp(log_p)
+        #log_p = kde.score_samples(x_range[:, None])
+        estimator = kde
+    #p = np.exp(log_p)
 
-    return p, log_p
+    return estimator
+
