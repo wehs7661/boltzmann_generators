@@ -225,15 +225,19 @@ class DimerSimulation:
         self.k_box = k_box
         self.harmonic_centering = harmonic_centering
 
+    def bond_energy(self, d):
+        return 1/4*self.a*(d - self.d0)**4 - 1/2*self.b*(d - self.d0)**2 + self.c*(d - self.d0)
+
+
     def get_energy(self, coords):
         U = 0
         d = np.linalg.norm(coords[0, :] - coords[1, :])
         
         # Bond Potential
-        U += 1/4*self.a*(d - self.d0)**4 - 1/2*self.b*(d - self.d0)**2 + self.c*(d - self.d0)
+        U += self.bond_energy(d)
         if self.harmonic_centering:
-            U += self.k_d*(coords[0, 0] + coords[0, 1]) ** 2
-            U += self.k_d*(coords[1, 0] ** 2 + coords[1, 1] ** 2)            
+            U += self.k_d*(coords[0, 0] + coords[1, 0]) ** 2
+            U += self.k_d*(coords[0, 1] ** 2 + coords[1, 1] ** 2)            
         for i in range(len(coords)):
             
             # Boundary Conditions

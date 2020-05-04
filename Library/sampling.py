@@ -1,5 +1,6 @@
 import numpy as np 
 import copy
+from tqdm.auto import tqdm
 
 class MetropolisSampler:
 
@@ -36,7 +37,7 @@ class MetropolisSampler:
         E0 = self.model.get_energy(x)
         self.xtraj, self.etraj = [copy.deepcopy(x0)], [E0]
 
-        for i in range(nsteps):
+        for i in tqdm(range(nsteps)):
             E_current = self.model.get_energy(x)
             delta_x = self.sigma * np.random.randn(*x.shape)  # same dimension as self.x
             x_proposed = x + delta_x

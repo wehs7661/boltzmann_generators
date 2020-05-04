@@ -188,8 +188,6 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         J_kl : torch.Tensor
             The loss function J_KL
         """
-        # import pdb
-        # pdb.set_trace()
         x, log_R_zx = self.generator(batch_z)
         u_x = self.calculate_energy(x, space='configuration')   # we need this to calculate J_kl
         # we need u_z to caluculate the weighs for calculation expecatation in the latant space
@@ -232,7 +230,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
                 # for 2D Gaussian distribution, u(z) = (1 / (2*sigma **2)) * z ** 2
                 # in our case, sigma =1 and z ** 2 = z[0] ** 2 + z[1] ** 2
-                energy[i] = self.regularize_energy(0.5 * (config[0] ** 2 + config[1] ** 2))
+                energy[i] = self.regularize_energy(0.5 * torch.sum(config ** 2))
                 # regularize the energy (see page 3 in the SI)
 
         else:
