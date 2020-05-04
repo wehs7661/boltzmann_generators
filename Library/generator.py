@@ -3,7 +3,6 @@ import copy
 import numpy as np 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 class RealNVP(nn.Module):  # inherit from nn.Module
     def __init__(self, s_net, t_net, mask, prior, system, sys_dim):
@@ -29,20 +28,21 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         ----------
         prior       The prior probability distribution in the latent space (generally a normal distribution)
         mask        The masking scheme for affine coupling layers.
-        s           The scaling function in the affine coupling layers.
-        t           The translation function in the affine coupling layers.
+        s           The scaling function/network in the affine coupling layers for all the NVP blocks.
+        t           The translation function/network in the affine coupling layers for all the NVP blocks.
         sys_dim     The dimensionality of the system
         """
-        
+
         super(RealNVP, self).__init__()  # nn.Module.__init__()
         self.prior = prior 
         self.mask = nn.Parameter(mask, requires_grad=False)  # could try requires_grad=False
         self.t = torch.nn.ModuleList([t_net() for _ in range(len(mask))]) 
-        self.s = torch.nn.ModuleList([s_net() for _ in range(len(mask))]) 
+        self.s = torch.nn.ModuleList([s_net() for _ in range(len(mask))])
+        
         # nn.ModuleList is basically just like a Python list, used to store a desired number of nn.Module’s.
         # Also note that t[i] and s[i] are entire sequences of operations
-        self.system = system # class of what molecular system are we considering. E.g. Ising.
-        self.sys_dim = sys_dim # tuple describing original dim. of system. e.g. Ising Model with N = 8 would be (8,8)
+        self.system = system   # class of what molecular system are we considering. 
+        self.sys_dim = sys_dim # tuple describing original dim. 
 
     def inverse_generator(self, x, process=False):
         """
@@ -66,17 +66,16 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         # new_zeros(size) returns a tensor of size "size" filled with 0s
         z_list = []
         z_list.append(copy.deepcopy(x.detach().numpy()))
-
         for i in reversed(range(len(self.t))):   # move backwards through the layers
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
-            # See equation (9) in the original RealNVP papaer
+            # See equation (9) in the original RealNVP papaer    
             z_ = self.mask[i] * z    # b * x in equation (9)
-            s = self.s[i](z_)        # s(b * x) in equation (9)
-            t = self.t[i](z_)        # t(b * x) in equation (9)
-            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s)  # equation (9)
+            s = self.s[i](z_) * (1 - self.mask[i])       # s(b * x) in equation (9)
+            t = self.t[i](z_) * (1 - self.mask[i])       # t(b * x) in equation (9)
+            #z = z_ + (1 - self.mask[i]) * (z - t) * torch.exp(-s) +    # equation (9)
+            #log_R_xz -= torch.sum(s, -1)
             z = z_ + (1 - self.mask[i]) * (z * torch.exp(s) + t)
             log_R_xz += torch.sum(s, -1)  
-            #print(log_R_xz)
             if process is True: 
                 z_list.append(copy.deepcopy(z.detach().numpy()))
 
@@ -111,11 +110,12 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         for  i in range(len(self.t)):
             # here we split the dataset into two channels (with 1:d and d+1:D dimensions)
             # See equation (9) in the original RealNVP papaer
-            x_ = self.mask[i] * x           # b * x in equation (9)
-            s = self.s[i](x_)               # s(b * x) in equation (9)
-            t = self.t[i](x_)               # t(b * x) in equation (9)
+            x_ = self.mask[i] * x         # b * x in equation (9)
+            s = self.s[i](x_) * (1 - self.mask[i])            # s(b * x) in equation (9)
+            t = self.t[i](x_) * (1 - self.mask[i])            # t(b * x) in equation (9)
             #x = x_ + (1 - self.mask[i]) * (x * torch.exp(s) + t)   # equation (9)
-            x = x_ + (1 - self.mask[i]) * (x - t) * torch.exp(-s)
+            #log_R_zx += torch.sum(s, -1)
+            x = x_ +  (1 - self.mask[i]) * (x - t) * torch.exp(-s)
             log_R_zx -= torch.sum(s, -1)    # equation (6) 
             if process is True:
                 x_list.append(copy.deepcopy(x.detach().numpy()))
@@ -124,58 +124,39 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             return x, log_R_zx, x_list
         else:
             return x, log_R_zx
-
-    def loss_total(self, batch, w_ml=1.0, w_kl=1.0, w_rc=1.0):
-        """
-        Calculate the total loss function.
-
-        Parameters
-        ----------
-        batch : 
-
-        w_ml : 
-
-        w_kl : 
-
-        w_rc
-
-        Returns
-        -------
-        loss : 
-
-        """        
-        loss = w_ml * self.loss_ML(batch) + w_kl * self.loss_ML(batch) + w_rc * self.loss_RC(batch)
-
-        return loss
         
-    def loss_ML(self, batch_x):
+    def loss_ML(self, batch_x, weighted=True):
         """
-        Calculate the loss function when training by example (samples from the configuration space)
+        Calculates   the loss function when training by example (samples from the configuration space)
         J_ML = E[u_z(z) - log Rxz(x)], where u_z(z) = 0.5 * /(sigma^{2}) * z^{2} (sigma = 1)
 
         Parameters
         ----------
         batch_x : torch.Tensor
             A batch of samples in the configuration space.
-        
+        weighte : bool
+            Whether the samples are already Boltzmann-weighted, i.e. drawn from MC simulations 
+            without removing duplicates of configurations
+
         Returns
         -------
         J_ml : torch.Tensor
             The loss function J_ML
         """
         z, log_R_xz = self.inverse_generator(batch_x)
-        # we don't need u_z in the calculation of J_ml
-        # but we do need u_x in the calculation of J_kl, see the method 'loss_KL'
-        # we need u_x to caluculate the weighs for calculation expecatation in the confiugration space
-        u_x = self.calculate_energy(batch_x, space='configuration')
-        # weights_x = torch.exp(-u_x)
-        J_ml = self.expectation(0.5 * torch.norm(z, dim=1) ** 2 - log_R_xz, weights = torch.ones(u_x.shape))
+        u_z = self.calculate_energy(z, space='latent') 
+        if weighted is not True:
+            J_ml = self.expectation(u_z - log_R_xz)
+        else:
+            u_x = self.calculate_energy(batch_x, space='configuration')  
+            weights_x = torch.exp(-u_x) 
+            J_ml = self.expectation(u_z - log_R_xz, weights=weights_x)
 
         return J_ml
 
-    def loss_KL(self, batch_z):
+    def loss_KL(self, batch_z, weighted=True):
         """
-        Calculate the loss function when training by energy (samples from the latent space)
+        Calculates the loss function when training by energy (samples from the latent space)
         J_KL = E[u_x(x) - log Rzx(z)]
 
         Parameters
@@ -190,14 +171,44 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         """
         x, log_R_zx = self.generator(batch_z)
         u_x = self.calculate_energy(x, space='configuration')   # we need this to calculate J_kl
-        # we need u_z to caluculate the weighs for calculation expecatation in the latant space
-        # u_z = self.calculate_energy(batch_z, space='latent')
-        # weights_z = torch.exp(-u_z)
-        J_kl = self.expectation(u_x - log_R_zx, weights = torch.ones(u_x.shape))
+        if weighted is not True:
+            J_kl = self.expectation(u_x - log_R_zx)
+        else:
+            u_z = self.calculate_energy(batch_z, space='latent')
+            weights_z = torch.exp(-u_z)  
+            J_kl = self.expectation(u_x - log_R_zx, weights=weights_z)
+
         return J_kl
 
-    def loss_RC(self):
-        pass
+    def loss_RC(self, batch_RC, estimator, weighted=True):
+        """
+        Calculates the reaction coordinate loss function. J_RC = E[logp(RC)].
+
+        Parameters
+        ----------
+        batch_RC : np.array
+            A batch of samples along the reaction coordinate (in the configuration space).
+        estimator : sklearn.neighbors.KernelDensity object
+            A kernel density estimator to estimate the probability of the samples
+        
+        Returns
+        -------
+        J_rc : torch.Tensor
+            The loss function J_RC
+
+        Note
+        ----
+        At the current stage, this method might only work for DWP.
+        """
+        log_p = estimator.score_samples(batch_RC[:, 0][:, None])
+        if weighted is True:
+            J_rc = self.expectation(log_p)
+        else:
+            u_rc = self.calculate_energy(batch_RC, space='configuration')
+            weights_rc = torch.exp(-u_rc)
+            J_rc = self.expectation(log_p, weights=weights_rc)
+
+        return J_rc
 
     def calculate_energy(self, batch, space):
         """
@@ -216,23 +227,20 @@ class RealNVP(nn.Module):  # inherit from nn.Module
             Whether to calcualte the energy in the real space (x) or the 
             latent space (z). Available options: 'latent' or 'configuration'.
         """
+
+        e_high, e_max = 10 ** 4, 10 ** 20
         energy = batch.new_zeros(batch.shape[0])  # like np.zeros, same length as batch_data
+
         if space == 'configuration':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
                 energy[i] = self.regularize_energy(self.system.get_energy(config))
-                # import pdb
-                # pdb.set_trace()
-                # regularize the energy (see page 3 in the SI)
-
         elif space == 'latent':
             for i in range(batch.shape[0]):  # for each data point in the dataset
                 config = batch[i, :].reshape(self.sys_dim)  # ensure correct dimensionality
                 # for 2D Gaussian distribution, u(z) = (1 / (2*sigma **2)) * z ** 2
                 # in our case, sigma =1 and z ** 2 = z[0] ** 2 + z[1] ** 2
                 energy[i] = self.regularize_energy(0.5 * torch.sum(config ** 2))
-                # regularize the energy (see page 3 in the SI)
-
         else:
             print("Error! Unavailable option of parameter 'space' specificed.")
             sys.exit()
@@ -260,10 +268,10 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         e : torch.Tensor
             Expectation value as a one-element tensor
         """
-        # e = torch.dot(observable, self.weights) / torch.sum(self.weights) the same as below
-        e = torch.sum(observable * weights) / torch.sum(weights)
-
+        # e = torch.dot(observable, weights) / torch.sum(weights) #the same as below
+        if weights is None:
+            e = observable.mean()
+        else:
+            e = torch.sum(observable * weights) / torch.sum(weights)
         return e
-
-        
 
