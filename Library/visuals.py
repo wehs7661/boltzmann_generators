@@ -1,9 +1,24 @@
-<<<<<<< HEAD
 # Visualization Library
-import matplotlib.pyplot as plt
-from matplotlib import animation
-import potentials
+import sys
+import torch
+import pickle
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import rc
+from matplotlib import gridspec
+from matplotlib import animation
+from torch import distributions
+from scipy.stats import multivariate_normal
+from density_estimator import density_estimator
+
+rc('font', **{
+    'family': 'sans-serif',
+    'sans-serif': ['DejaVu Sans'],
+    'size': 10
+})
+# Set the font used for MathJax - more on this later
+rc('mathtext', **{'default': 'regular'})
+plt.rc('font', family='serif')
 
 
 def make_2D_traj_potential(x_traj, potential, xlim, ylim, min = -10, max = -3, fps = 30, markersize = 8, color = 'red', cmap = "viridis"):
@@ -121,26 +136,7 @@ def plot_bond_sampling(x_traj, dimer, bins = 20):
     ax2.plot(distance, bond_energy, color = "blue")
     ax2.set_ylabel("Bond Energy", color="blue")
     ax2.tick_params(axis='y')
-=======
-import sys
-import torch
-import pickle
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import rc
-from matplotlib import gridspec
-from torch import distributions
-from scipy.stats import multivariate_normal
-from density_estimator import density_estimator
 
-rc('font', **{
-    'family': 'sans-serif',
-    'sans-serif': ['DejaVu Sans'],
-    'size': 10
-})
-# Set the font used for MathJax - more on this later
-rc('mathtext', **{'default': 'regular'})
-plt.rc('font', family='serif')
 
 class BoltzmannPlotter:
     def __init__(self, system, model, x_samples, n_z=5000, prior=None):
@@ -515,4 +511,3 @@ class BoltzmannPlotter:
         plt.grid()
 
         plt.savefig(save_path, dpi=600)
->>>>>>> fbdf31387d0897f402af6910892f96c82799780d
