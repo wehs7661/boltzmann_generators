@@ -102,7 +102,7 @@ class BoltzmannGenerator:
         self.s_net = lambda: nn.Sequential(*self.affine_layers(), nn.Tanh())
         self.t_net = lambda: nn.Sequential(*self.affine_layers())
 
-    def build(self, system):
+    def build(self, system, mask = None):
         """
         This method builds a Boltzmann generator given the system of interest.
 
@@ -123,12 +123,14 @@ class BoltzmannGenerator:
         """
         self.system = system
         self.build_networks()   # build the affine coupling layers
-        self.mask = torch.from_numpy(
-            np.array([[0, 1], [1, 0]] * self.n_blocks).astype(np.float32))
+        affine = np.concatenate((np.ones(int(self.dimension/2)), np.zeros(int(self.dimension/2))))
+        affine = np.array([affine, np.flip(affine)] * self.n_blocks)
+        self.mask = torch.from_numpy(affine.astype(np.float32))
         self.prior = distributions.MultivariateNormal(torch.zeros(
             self.dimension), torch.eye(self.dimension) * self.prior_sigma)
+        
         model = RealNVP(self.s_net, self.t_net, self.mask,
-                        self.prior, self.system, (self.dimension,))
+                        self.prior, self.system, self.reshape)
         for key in self.params:
             setattr(model, key, self.params[key])
 
@@ -154,7 +156,7 @@ class BoltzmannGenerator:
 
         return subdata
 
-    def train(self, model, w_loss, x_samples=None, z_samples=None, optimizer=None, KDE_optimize=False):
+    def train(self, model, w_loss, x_samples=None, z_samples=None, optimizer=None, KDE_optimize=False, rxn_coordinate = None):
         """
         Trains a Boltzmann generator. This method does not return anything, but the 
         parameters in the input model will be adjusted based on the training.
@@ -174,10 +176,15 @@ class BoltzmannGenerator:
         KDE_optimize : bool
             Whether to optimize the bandwitch when using KDE to estimate the probability
             distributions for RC loss calculation.
+        rxn_coordinate : lambda function
+            Function for getting rxn coordinate of interest out of system
         """
         if optimizer is None:
             optimizer = torch.optim.Adam(
                 [p for p in model.parameters() if p.requires_grad == True], lr=self.LR)
+        
+        if rxn_coordinate is None:
+            rxn = lambda x: x[:,0]
 
         # preprocess the training datasets
         if w_loss[0] != 0 or w_loss[2] != 0:    # calculations of J_ML and J_RC requires x_samples
@@ -210,10 +217,11 @@ class BoltzmannGenerator:
         # for the ease of coding, we set loss_X as 0 if loss_X is 0
         loss_ML, loss_KL, loss_RC = w_loss[0], w_loss[1], w_loss[2]
 
-
+        if w_loss[2] != 0:
+            estimator = density_estimator(rxn(x_samples), optimize=KDE_optimize)
+        
         # start training!
         self.loss_iteration = []   # the loss of each iteration
-        estimator = density_estimator(x_samples[:, 0], optimize=KDE_optimize) 
 
         for i in tqdm(range(self.n_epochs)):
             for batch_x, batch_z in zip(subdata_x, subdata_z):  # iterations

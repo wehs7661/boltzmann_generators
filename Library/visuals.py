@@ -92,6 +92,28 @@ def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, mark
     plt.xlabel("$x_1$")
 
 def make_2D_traj_bond(x_traj, box, bonds, fps = 30, markersize = 8, color = 'red'):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    sct, = ax.plot([], [], "o", markersize=markersize, color = color)
+    bct, = ax.plot([], [], color = color, linewidth=markersize/3)
+    # pct, = ax.plot([], [], "o", markersize=8)
+
+    def update_graph(i, xa, ya): # , vx, vy):
+        sct.set_data(xa[i], ya[i])
+        for bond in bonds:
+            bct.set_data([xa[i][bond[0]], xa[i][bond[1]]], [ya[i][bond[0]], ya[i][bond[1]]])
+    x_lim = box[0]/2 
+    y_lim = box[1]/2
+    ax.set_xlim([-x_lim, x_lim])
+    ax.set_ylim([-y_lim, y_lim])
+    ax.set_xlabel("X axis")
+    ax.set_ylabel("Y axis")
+    video_traj = x_traj
+    ani = animation.FuncAnimation(fig, update_graph, video_traj.shape[0], fargs=(video_traj[:,:,0], video_traj[:,:,1]), interval=1000/fps)
+    plt.rcParams['animation.html'] = 'html5'
+    return(ani)
+
+def make_2D_traj_bond_indiv_particles(x_traj, box, bonds, fps = 30, markersize = 8, color = 'red'):
     fps = fps
     fig = plt.figure()
     ax = fig.add_subplot(111)
@@ -103,9 +125,6 @@ def make_2D_traj_bond(x_traj, box, bonds, fps = 30, markersize = 8, color = 'red
         sct.set_data(xa[i], ya[i])
         for bond in bonds:
             bct.set_data([xa[i][bond[0]], xa[i][bond[1]]], [ya[i][bond[0]], ya[i][bond[1]]])
-
-
-
     x_lim = box[0]/2 
     y_lim = box[1]/2
     ax.set_xlim([-x_lim, x_lim])
@@ -136,6 +155,88 @@ def plot_bond_sampling(x_traj, dimer, bins = 20):
     ax2.plot(distance, bond_energy, color = "blue")
     ax2.set_ylabel("Bond Energy", color="blue")
     ax2.tick_params(axis='y')
+
+def binormal_contour():
+    x, y = np.mgrid[-3:3:.01, -3:3:.01]
+    pos = np.empty(x.shape + (2,))
+    pos[:, :, 0] = x; pos[:, :, 1] = y
+    rv = multivariate_normal([0, 0], [[1, 0], [0, 1]])
+    
+    plt.contourf(x, y, rv.pdf(pos), 20)
+    plt.xlabel('$ z_{1} $')
+    plt.ylabel('$ z_{2} $')
+    plt.title('Bivariate normal distribution')
+    clb = plt.colorbar()
+    clb.ax.set_title(r'$P(z)$')
+    
+    ax = plt.gca()
+    ax.set_aspect('equal')
+
+
+def dimer_2D_generator_result(dimer_potential, realNVP_model, samples_list,
+                              index_list = [0, 1], xy_index = 0, n_gen = 5000):
+    n_samples = samples_list[0].shape[0]
+    n_particles = samples_list[0].shape[1]
+    n_dimensions = samples_list[0].shape[2]
+
+    fig = plt.subplots(1, 4, figsize=(25, 5))
+
+    # First subplot: training samples in 2D space
+    plt.subplot(1, 4, 1)
+    plt.scatter(*samples_list[0][:, index_list, xy_index].T, s = 0.5, color = "red")
+    plt.scatter(*samples_list[1][:, index_list, xy_index].T, s = 0.5, color = "white")
+    ax = plt.gca()
+    ax.set_aspect(0.58)
+
+    plt.xlabel("$x_"+str(index_list[0]+1)+"$")
+    plt.ylabel("$x_"+str(index_list[1]+1)+"$")
+    plt.title("Real Space Samples")
+
+    # Second subplot: transformation of samples to latent space
+    z_samples_1, log_R_xz_1 =  realNVP_model.inverse_generator(
+        torch.from_numpy(
+            samples_list[0].reshape((n_samples, n_particles * n_dimensions)).astype('float32')
+        )
+    )
+
+    z_samples_2, log_R_xz_2 =  realNVP_model.inverse_generator(
+        torch.from_numpy(
+            samples_list[1].reshape((n_samples, n_particles * n_dimensions)).astype('float32')
+        )
+    )
+
+    plt.subplot(1, 4, 2)
+    binormal_contour()
+    plt.scatter(*z_samples_1.detach().numpy().reshape((n_samples, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "red")
+    plt.scatter(*z_samples_2.detach().numpy().reshape((n_samples, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "white")
+
+    plt.xlim([-3, 3])
+    plt.ylim([-3, 3])    
+
+    # Third subplot: Draw samples from the prior Gaussian distribution
+
+    z_generated_tf = realNVP_model.prior.sample_n(n_gen)
+    z_generated = z_generated_tf.detach().numpy()
+
+    plt.subplot(1, 4, 3)
+    binormal_contour()
+    plt.scatter(*z_generated.reshape((n_gen, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "white")
+
+    plt.xlim([-3, 3])
+    plt.ylim([-3, 3])
+
+    # Fourth subplot: Transform latent samples back to configuration space
+    x_generated, log_R_zx = realNVP_model.generator(z_generated_tf)
+    x_generated = x_generated.detach().numpy().reshape((n_gen, n_particles, n_dimensions))[:, index_list, xy_index].T
+
+    plt.subplot(1, 4, 4)
+    plt.scatter(*x_generated, s = 0.5, color = "gray")
+
+    plt.xlabel("$x_"+str(index_list[0]+1)+"$")
+    plt.ylabel("$x_"+str(index_list[1]+1)+"$")
+    plt.title("Real Space Generated Samples")
+
+
 
 
 class BoltzmannPlotter:

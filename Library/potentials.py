@@ -3,6 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 from matplotlib import rc
 from matplotlib import gridspec
+import sys
 
 rc('font', **{
     'family': 'sans-serif',
@@ -286,13 +287,20 @@ class DimerSimulation:
     def bond_energy(self, d):
         return 1/4*self.a*(d - self.d0)**4 - 1/2*self.b*(d - self.d0)**2 + self.c*(d - self.d0)
 
-
+ 
     def get_energy(self, coords):
         U = 0
-        d = np.linalg.norm(coords[0, :] - coords[1, :])
+        if coords.dtype == np.float:
+            d = np.linalg.norm(coords[0, :] - coords[1, :])
+        elif coords.dtype == torch.float:
+            d = (coords[0, :] - coords[1, :]).norm()
+        else:
+            print("Invalide data type!")
+            sys.exit()
         
         # Bond Potential
         U += self.bond_energy(d)
+
         if self.harmonic_centering:
             U += self.k_d*(coords[0, 0] + coords[1, 0]) ** 2
             U += self.k_d*(coords[0, 1] ** 2 + coords[1, 1] ** 2)            
@@ -309,7 +317,13 @@ class DimerSimulation:
                 if i == j:
                     continue
                 d = coords[i, :] - coords[j, :]
-                U += self.epsilon * (self.sigma**2 / np.dot(d,d))**6
+                if coords.dtype == np.float:
+                    U += self.epsilon * (self.sigma**2 / np.dot(d,d))**6
+                elif coords.dtype == torch.float:
+                    U += self.epsilon * (self.sigma**2 / torch.dot(d,d))**6
+                else:
+                    print("Invalide data type!")
+                    sys.exit()
         return U
 
 

@@ -125,7 +125,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         else:
             return x, log_R_zx
         
-    def loss_ML(self, batch_x, weighted=True):
+    def loss_ML(self, batch_x, weighted=False):
         """
         Calculates   the loss function when training by example (samples from the configuration space)
         J_ML = E[u_z(z) - log Rxz(x)], where u_z(z) = 0.5 * /(sigma^{2}) * z^{2} (sigma = 1)
@@ -154,7 +154,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
 
         return J_ml
 
-    def loss_KL(self, batch_z, weighted=True):
+    def loss_KL(self, batch_z, weighted=False):
         """
         Calculates the loss function when training by energy (samples from the latent space)
         J_KL = E[u_x(x) - log Rzx(z)]
@@ -180,7 +180,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
 
         return J_kl
 
-    def loss_RC(self, batch_RC, estimator, weighted=True):
+    def loss_RC(self, batch_RC, estimator, weighted=False):
         """
         Calculates the reaction coordinate loss function. J_RC = E[logp(RC)].
 
@@ -201,7 +201,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         At the current stage, this method might only work for DWP.
         """
         log_p = estimator.score_samples(batch_RC[:, 0][:, None])
-        if weighted is True:
+        if weighted is not True:
             J_rc = self.expectation(log_p)
         else:
             u_rc = self.calculate_energy(batch_RC, space='configuration')
@@ -254,7 +254,7 @@ class RealNVP(nn.Module):  # inherit from nn.Module
         return energy
 
 
-    def expectation(self, observable, weights):
+    def expectation(self, observable, weights = None):
         """ 
         Calculate the expectation value of an observable
         
