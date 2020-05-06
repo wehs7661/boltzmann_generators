@@ -20,6 +20,12 @@ rc('font', **{
 rc('mathtext', **{'default': 'regular'})
 plt.rc('font', family='serif')
 
+if torch.cuda.is_available():  
+  dev = "cuda:0" 
+else:  
+  dev = "cpu"  
+device = torch.device(dev)
+
 
 def make_2D_traj_potential(x_traj, potential, xlim, ylim, min = -10, max = -3, fps = 30, markersize = 8, color = 'red', cmap = "viridis"):
     X, Y = np.meshgrid(np.linspace(xlim[0],xlim[1],50), np.linspace(ylim[0],ylim[1],50))
@@ -91,17 +97,20 @@ def plot_2D_potential(potential, xlim, ylim, min = -10, max = -3, fps = 30, mark
     plt.ylabel("$x_2$")
     plt.xlabel("$x_1$")
 
-def make_2D_traj_bond(x_traj, box, bonds, fps = 30, markersize = 8, color = 'red'):
+def make_2D_traj_bond(x_traj, box, bonds, fps = 30, markersize = 8, color = 'black', bond_color = 'red'):
     fig = plt.figure()
     ax = fig.add_subplot(111)
     sct, = ax.plot([], [], "o", markersize=markersize, color = color)
-    bct, = ax.plot([], [], color = color, linewidth=markersize/3)
+    dct, = ax.plot([], [], "o", markersize=markersize, color = bond_color)
+    bct, = ax.plot([], [], color = bond_color, linewidth=markersize/3)
     # pct, = ax.plot([], [], "o", markersize=8)
 
     def update_graph(i, xa, ya): # , vx, vy):
         sct.set_data(xa[i], ya[i])
         for bond in bonds:
             bct.set_data([xa[i][bond[0]], xa[i][bond[1]]], [ya[i][bond[0]], ya[i][bond[1]]])
+            dct.set_data([xa[i][bond[0]], xa[i][bond[1]]], [ya[i][bond[0]], ya[i][bond[1]]])
+
     x_lim = box[0]/2 
     y_lim = box[1]/2
     ax.set_xlim([-x_lim, x_lim])
@@ -137,24 +146,31 @@ def make_2D_traj_bond_indiv_particles(x_traj, box, bonds, fps = 30, markersize =
     return(ani)
 
 
-def plot_bond_sampling(x_traj, dimer, bins = 20):
-    # Simulation Sampling
-    bond_dist = [np.linalg.norm(x_traj[i][0] - x_traj[i][1]) for i in range(x_traj.shape[0])]
+def plot_bond_sampling(x_traj_list, dimer, bins = 20):
+    # Plotting
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
 
     # Analytical energy
     distance = np.linspace(0.5, 2.5, 30)
     bond_energy = dimer.bond_energy(distance)
 
-    # Plotting
-    fig, ax1 = plt.subplots()
-    ax2 = ax1.twinx()
-    ax1.set_xlabel("Dimer Distance")
-    ax1.set_ylabel("Counts", color = "red")
-    ax1.hist(bond_dist, bins = bins, color = "red")
-
     ax2.plot(distance, bond_energy, color = "blue")
     ax2.set_ylabel("Bond Energy", color="blue")
     ax2.tick_params(axis='y')
+
+    for x_traj in x_traj_list:
+
+        # Simulation Sampling
+        bond_dist = [np.linalg.norm(x_traj[i][0] - x_traj[i][1]) for i in range(x_traj.shape[0])]
+
+        ax1.set_xlabel("Dimer Distance")
+        ax1.set_ylabel("Counts")
+        ax1.hist(bond_dist, bins = bins)
+
+    return(fig, ax1, ax2)
+
+
 
 def binormal_contour():
     x, y = np.mgrid[-3:3:.01, -3:3:.01]
@@ -196,19 +212,19 @@ def dimer_2D_generator_result(dimer_potential, realNVP_model, samples_list,
     z_samples_1, log_R_xz_1 =  realNVP_model.inverse_generator(
         torch.from_numpy(
             samples_list[0].reshape((n_samples, n_particles * n_dimensions)).astype('float32')
-        )
+        ).to(device)
     )
 
     z_samples_2, log_R_xz_2 =  realNVP_model.inverse_generator(
         torch.from_numpy(
             samples_list[1].reshape((n_samples, n_particles * n_dimensions)).astype('float32')
-        )
+        ).to(device)
     )
 
     plt.subplot(1, 4, 2)
     binormal_contour()
-    plt.scatter(*z_samples_1.detach().numpy().reshape((n_samples, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "red")
-    plt.scatter(*z_samples_2.detach().numpy().reshape((n_samples, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "white")
+    plt.scatter(*z_samples_1.cpu().detach().numpy().reshape((n_samples, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "red")
+    plt.scatter(*z_samples_2.cpu().detach().numpy().reshape((n_samples, n_particles, n_dimensions))[:, index_list, xy_index].T, s = 0.5, color = "white")
 
     plt.xlim([-3, 3])
     plt.ylim([-3, 3])    
@@ -216,7 +232,7 @@ def dimer_2D_generator_result(dimer_potential, realNVP_model, samples_list,
     # Third subplot: Draw samples from the prior Gaussian distribution
 
     z_generated_tf = realNVP_model.prior.sample_n(n_gen)
-    z_generated = z_generated_tf.detach().numpy()
+    z_generated = z_generated_tf.cpu().detach().numpy()
 
     plt.subplot(1, 4, 3)
     binormal_contour()
@@ -227,7 +243,7 @@ def dimer_2D_generator_result(dimer_potential, realNVP_model, samples_list,
 
     # Fourth subplot: Transform latent samples back to configuration space
     x_generated, log_R_zx = realNVP_model.generator(z_generated_tf)
-    x_generated = x_generated.detach().numpy().reshape((n_gen, n_particles, n_dimensions))[:, index_list, xy_index].T
+    x_generated = x_generated.cpu().detach().numpy().reshape((n_gen, n_particles, n_dimensions))[:, index_list, xy_index].T
 
     plt.subplot(1, 4, 4)
     plt.scatter(*x_generated, s = 0.5, color = "gray")
@@ -292,10 +308,10 @@ class BoltzmannPlotter:
         """
         x_samples : np.array
         """
-        z, _, z_list = self.model.inverse_generator(torch.from_numpy(x_samples.astype('float32')), process=process)
+        z, _ = self.model.inverse_generator(torch.from_numpy(x_samples.astype('float32')), process=process)
         z = z.detach().numpy()
 
-        return z, z_list
+        return z
 
     def generator_result(self, save_path):
         """
@@ -311,24 +327,29 @@ class BoltzmannPlotter:
         for i in range(len(self.x_samples)):
             plt.scatter(self.x_samples[i][:, 0], self.x_samples[i][:, 1], color=self.colors[i], s=0.5)
         if type(self.system).__name__ == 'DoubleWellPotential':
-            plt.annotate('(configuration space, $ x \sim p(x) $)', xy=(0, 0), xytext=(-4.2, 6.5), color='white', size='12')        
+            plt.annotate('(configuration space, $ x \sim p(x) $)', xy=(0, 0), xytext=(-4.2, 6.5), color='white', size='12')
+            ax.set_aspect(0.58)
+
+        if type(self.system).__name__ == 'MullerWellPotential':
+            plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-1.5, -0.125), color='black', size='12')
+            plt.xlim([-1.5,1])
+            plt.ylim([-0.25, 2])
+            ax.set_aspect(1.2)
         ax = plt.gca()
-        ax.set_aspect(0.58)
 
         # Second subplot: transform configuration samples to latent samples using a trained inversed generator
         z_generated = []
         self.z_generated_list = []   # for plotting "map_to_latent"
         for i in range(len(self.x_samples)):
-            z, z_list = self.transform_x_samples(self.x_samples[i], True)
+            z = self.transform_x_samples(self.x_samples[i], False)
             z_generated.append(z)
-            self.z_generated_list.append(z_list)  # will not be used in this method but useful for other methods
+            # will not be used in this method but useful for other methods
         
         plt.subplot(1, 4, 2)
         self.binormal_contour()
         for i in range(len(z_generated)):
             plt.scatter(z_generated[i][:, 0], z_generated[i][:, 1], color=self.colors[i], s=0.5)
-        if type(self.system).__name__ == 'DoubleWellPotential':
-            plt.annotate('(latent space, $ z = F_{xz}(x) $)', xy=(0, 0), xytext=(-2.625, 2.4375), color='white', size='12')
+        plt.annotate('(latent space, $ z = F_{xz}(x) $)', xy=(0, 0), xytext=(-2.625, 2.4375), color='white', size='12')
         plt.xlim([-3, 3])
         plt.ylim([-3, 3])
 
@@ -339,8 +360,7 @@ class BoltzmannPlotter:
         plt.subplot(1, 4, 3)
         self.binormal_contour()
         plt.scatter(z_samples[:, 0], z_samples[:, 1], color='white', s=0.5)
-        if type(self.system).__name__ == 'DoubleWellPotential':
-            plt.annotate('(latent space, $ z \sim p(z) $)', xy=(0, 0), xytext=(-2.625, 2.4375), color='white', size='12')
+        plt.annotate('(latent space, $ z \sim p(z) $)', xy=(0, 0), xytext=(-2.625, 2.4375), color='white', size='12')
         plt.xlim([-3, 3])
         plt.ylim([-3, 3])
 
@@ -356,8 +376,15 @@ class BoltzmannPlotter:
             plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-4.2, 6.5), color='white', size='12')
             plt.xlim([-5, 5])
             plt.ylim([-8, 8])
+            ax.set_aspect(0.58)
+
+        if type(self.system).__name__ == 'MullerWellPotential':
+            plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-1.5, -0.125), color='black', size='12')
+            plt.xlim([-1.5,1])
+            plt.ylim([-0.25, 2])
+            ax.set_aspect(1.2)
+            
         ax = plt.gca()
-        ax.set_aspect(0.58)
 
         plt.savefig(save_path, dpi=600)
 
@@ -444,15 +471,16 @@ class BoltzmannPlotter:
         if type(self.system).__name__ == 'DoubleWellPotential':
             x1 = np.ones([n_path,2]) * self.system.min_left 
             x2 = np.ones([n_path,2]) * self.system.min_right
+
         else:
             if x1 is None or x2 is None:
                 print("Error! No data points or type of system provided!")
             else:
                 x1 = np.ones([n_path,2]) * x1 
                 x2 = np.ones([n_path,2]) * x2 
-
-        x1 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
-        x2 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
+        if type(self.system).__name__ == 'DoubleWellPotential':
+            x1 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
+            x2 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
         
         # Part 1-2: plot the samples x1, x2
         fig = plt.subplots(1, 3, figsize=(18, 4.5))
@@ -461,7 +489,13 @@ class BoltzmannPlotter:
         plt.scatter(x1[:, 0], x1[:, 1], color=self.colors[0], s=1)
         plt.scatter(x2[:, 0], x2[:, 1], color=self.colors[1], s=1)
         ax = plt.gca()
-        ax.set_aspect(0.58)
+        if type(self.system).__name__ == 'MullerWellPotential':
+            plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-1.5, -0.125), color='black', size='12')
+            plt.xlim([-1.5,1])
+            plt.ylim([-0.25, 2])
+            ax.set_aspect(1.2)
+        if type(self.system).__name__ == 'DoubleWellPotential':
+            ax.set_aspect(0.58)
 
         # Part 2-1: map the samples from the configuration space to latent space
         z1, _ = self.model.inverse_generator(torch.from_numpy(x1.astype('float32')))
@@ -490,11 +524,19 @@ class BoltzmannPlotter:
             x_gen, _ = self.model.generator(z_samples[i])
             x_gen = x_gen.detach().numpy()
             if len(z_samples) > len(self.colors):
-                plt.scatter(x_gen[:, 0], x_gen[:, 1], s=1)
+                plt.plot(x_gen[:, 0], x_gen[:, 1], lw=1)
             else:
-                plt.scatter(x_gen[:, 0], x_gen[:, 1], color=self.colors[i], s=1)
+                plt.plot(x_gen[:, 0], x_gen[:, 1], color=self.colors[i], lw=1)
+        
         ax = plt.gca()
         ax.set_aspect(0.58)
+
+        if type(self.system).__name__ == 'MullerWellPotential':
+            plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-1.5, -0.125), color='black', size='12')
+            plt.xlim([-1.5,1])
+            plt.ylim([-0.25, 2])
+            ax.set_aspect(1.2)
+
 
         fig[0].tight_layout()
         plt.savefig(save_path, dpi=600)

@@ -317,6 +317,7 @@ class DimerSimulation:
                 if i == j:
                     continue
                 d = coords[i, :] - coords[j, :]
+                # print(d)
                 if coords.dtype == np.float:
                     U += self.epsilon * (self.sigma**2 / np.dot(d,d))**6
                 elif coords.dtype == torch.float:
@@ -325,6 +326,44 @@ class DimerSimulation:
                     print("Invalide data type!")
                     sys.exit()
         return U
+
+    def get_energy_mp(self, coords):
+        U = 0
+        if coords.dtype == np.float:
+            d = np.linalg.norm(coords[0, :] - coords[1, :])
+        elif coords.dtype == torch.float:
+            d = (coords[0, :] - coords[1, :]).norm()
+        else:
+            print("Invalide data type!")
+            sys.exit()
+        
+        # Bond Potential
+        U += self.bond_energy(d)
+
+        if self.harmonic_centering:
+            U += self.k_d*(coords[0, 0] + coords[1, 0]) ** 2
+            U += self.k_d*(coords[0, 1] ** 2 + coords[1, 1] ** 2)            
+        for i in range(len(coords)):
+            
+            # Boundary Conditions
+            if abs(coords[i, 0]) >= self.l_box:
+                U += self.k_box*(abs(coords[i,0]) - self.l_box)**2
+            if abs(coords[i, 1]) >= self.l_box:
+                U += self.k_box*(abs(coords[i, 1]) - self.l_box)**2
+
+            # LJ Interactions
+            for j in range(2, len(coords)):
+                if i == j:
+                    continue
+                d = coords[i, :] - coords[j, :]
+                # print(d)
+                if coords.dtype == np.float:
+                    U += self.epsilon * (self.sigma**2 / np.dot(d,d))**6
+                elif coords.dtype == torch.float:
+                    U += self.epsilon * (self.sigma**2 / torch.dot(d,d))**6
+                else:
+                    print("Invalide data type!")
+                    sys.exit()
 
 
 
