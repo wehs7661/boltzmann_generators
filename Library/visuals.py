@@ -386,8 +386,41 @@ class BoltzmannPlotter:
         plt.plot(x_analytical, f_analytical, label='Exact', color='blue')
         plt.xlabel("$x_{1}$")
         plt.ylabel("Free energy $f$")
-        plt.title("Free energy as a function of $x_{1}$")
+        plt.title("Free energy based on the KDE method")
         plt.legend()
         plt.grid()
 
         plt.savefig(save_path, dpi=600)
+    
+    def all_KDE_profile(self, save_path, estimators):
+        
+        # analytical solution
+        if type(self.system).__name__ == 'DoubleWellPotential':
+            x_range = np.linspace(-3, 3, 1000)  # for plotting the estimates
+            x_analytical  = np.linspace(-3, 3, 100)
+            f_analytical = self.system.get_energy([x_analytical, 0]) - np.log(np.sqrt(np.pi))
+            f_analytical -= np.min(f_analytical)
+
+        models_str = ['ML', 'KL', 'ML + KL', 'RC']
+        titles = []
+        for i in range(len(models_str)):
+            titles.append('Free energy profile (%s model)' % models_str[i])
+
+        fig = plt.subplots(1, 4, figsize=(25, 5))
+        for i in range(4):
+            log_p = estimators[i].score_samples(x_range[:, None])
+            f = -log_p
+            f -= np.min(f)
+
+            plt.subplot(1, 4, i + 1)
+            plt.plot(x_range, f, label='Estimated', color='green')
+            plt.plot(x_analytical, f_analytical, label='Exact', color='blue')
+            plt.xlabel("$x_{1}$")
+            plt.ylabel("Free energy $f$")
+            plt.title(titles[i])
+            plt.legend()
+            plt.grid()
+        
+        plt.savefig(save_path, dpi=600)
+
+        

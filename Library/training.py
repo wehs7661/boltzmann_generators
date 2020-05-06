@@ -144,7 +144,7 @@ class BoltzmannGenerator:
 
         Returns
         -------
-        batch : torch.Tensor
+        samples : torch.Tensor
             A batch of samples serving as the input for inverse generators or generators.
         """
         self.n_pts = len(samples)   # number of data points
@@ -175,12 +175,13 @@ class BoltzmannGenerator:
             Whether to optimize the bandwitch when using KDE to estimate the probability
             distributions for RC loss calculation.
         """
+        self.w_loss = w_loss
         if optimizer is None:
             optimizer = torch.optim.Adam(
                 [p for p in model.parameters() if p.requires_grad == True], lr=self.LR)
 
         # preprocess the training datasets
-        if w_loss[0] != 0 or w_loss[2] != 0:    # calculations of J_ML and J_RC requires x_samples
+        if self.w_loss[0] != 0 or self.w_loss[2] != 0:    # calculations of J_ML and J_RC requires x_samples
             if x_samples is None:
                 print(
                     'Error! w_ML is specfied but no samples in the configuration space are given.')
@@ -188,13 +189,13 @@ class BoltzmannGenerator:
             else:
                 subdata_x = self.preprocess_data(x_samples)
 
-            if w_loss[1] == 0 and z_samples is None:
+            if self.w_loss[1] == 0 and z_samples is None:
                 # when only training on J_ML, we don't need z_samples but we need to make 
                 # up subdata_z to enable zip function in the training loop. subdata_z could 
                 # be any iterable, since w_loss[1] == 0 and w_loss[2] == 0, subdata_z won't be trained anyway
                 subdata_z = np.zeros(len(subdata_x))
 
-        if w_loss[1] != 0:   # Calculation of J_KL reqruies z_samples
+        if self.w_loss[1] != 0:   # Calculation of J_KL reqruies z_samples
             if z_samples is None:
                 print(
                     'Error! w_KL or w_RC is specified but no samples in the latent space are given.')
@@ -202,13 +203,13 @@ class BoltzmannGenerator:
             else:
                 subdata_z = self.preprocess_data(z_samples)
 
-            if (w_loss[0] == 0 and w_loss[2] == 0) and x_samples is None:
+            if (self.w_loss[0] == 0 and self.w_loss[2] == 0) and x_samples is None:
                 # Similarly, we don't need x_samples if w_ML and w_RC are both 0, we don't need x_samples
                 # but we still need to make up subdata_x
                 subdata_x = np.zeros(len(subdata_z))
 
         # for the ease of coding, we set loss_X as 0 if loss_X is 0
-        loss_ML, loss_KL, loss_RC = w_loss[0], w_loss[1], w_loss[2]
+        loss_ML, loss_KL, loss_RC = self.w_loss[0], self.w_loss[1], self.w_loss[2]
 
 
         # start training!
@@ -217,15 +218,15 @@ class BoltzmannGenerator:
 
         for i in tqdm(range(self.n_epochs)):
             for batch_x, batch_z in zip(subdata_x, subdata_z):  # iterations
-                if w_loss[0] != 0:
+                if self.w_loss[0] != 0:
                     loss_ML = model.loss_ML(batch_x)
-                if w_loss[1] != 0:
+                if self.w_loss[1] != 0:
                     loss_KL = model.loss_KL(batch_z)
-                if w_loss[2] != 0:
+                if self.w_loss[2] != 0:
                     loss_RC = model.loss_RC(batch_x, estimator)
 
-                loss = w_loss[0] * loss_ML + w_loss[1] * \
-                    loss_KL + w_loss[2] * loss_RC   # the loss of a iteration
+                loss = self.w_loss[0] * loss_ML + self.w_loss[1] * \
+                    loss_KL + self.w_loss[2] * loss_RC   # the loss of a iteration
 
                 # convert from 1-element tensor to scalar
                 self.loss_iteration.append(loss.item())
