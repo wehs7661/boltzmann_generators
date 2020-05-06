@@ -227,8 +227,8 @@ class BoltzmannPlotter:
             if x1 is None or x2 is None:
                 print("Error! No data points or type of system provided!")
             else:
-                x1 = np.ones([n_path,2]) * x1 
-                x2 = np.ones([n_path,2]) * x2 
+                x1 = np.ones([n_path, 2]) * x1 
+                x2 = np.ones([n_path, 2]) * x2 
 
         x1 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
         x2 += np.vstack((np.array([0, 0]), np.random.random([n_path - 1, 2]) - 0.5))
@@ -392,7 +392,7 @@ class BoltzmannPlotter:
 
         plt.savefig(save_path, dpi=600)
     
-    def all_KDE_profile(self, save_path, estimators):
+    def all_KDE_profiles(self, save_path, estimators):
         
         # analytical solution
         if type(self.system).__name__ == 'DoubleWellPotential':
@@ -420,6 +420,100 @@ class BoltzmannPlotter:
             plt.title(titles[i])
             plt.legend()
             plt.grid()
+        
+        plt.savefig(save_path, dpi=600)
+
+    def all_generated_latent(self, save_path, generators):
+        models_str = ['ML', 'KL', 'ML + KL', 'RC']
+        titles = []
+        for i in range(len(models_str)):
+            titles.append('%s model' % models_str[i])
+
+        fig = plt.subplots(1, 4, figsize=(25, 5))
+        for i in range(4):
+            z_generated = []
+            for j in range(len(self.x_samples)):
+                z, _ = generators[i].inverse_generator(torch.from_numpy(self.x_samples[j].astype('float32')))
+                z = z.detach().numpy()
+                z_generated.append(z)
+
+            plt.subplot(1, 4, i + 1)
+            self.binormal_contour()
+            for i in range(len(z_generated)):
+                plt.scatter(z_generated[i][:, 0], z_generated[i][:, 1], color=self.colors[i], s=0.5)
+            if type(self.system).__name__ == 'DoubleWellPotential':
+                plt.annotate('(latent space, $ z = F_{xz}(x) $)', xy=(0, 0), xytext=(-2.625, 2.4375), color='white', size='12')
+            plt.xlim([-3, 3])
+            plt.ylim([-3, 3])
+
+        plt.savefig(save_path, dpi=600)
+
+    def all_generated_configuration(self, save_path, generators, n_z=5000):
+        models_str = ['ML', 'KL', 'ML + KL', 'RC']
+        titles = []
+        for i in range(len(models_str)):
+            titles.append('Generated configurations (%s model)' % models_str[i])
+        
+        z_samples = self.prior.sample_n(self.n_z)
+        z_samples = z_samples.detach().numpy()  
+
+        fig = plt.subplots(1, 4, figsize=(25, 5))
+        for i in range(4):
+            x_generated, _ = generators[i].generator(torch.from_numpy(z_samples))
+            x_generated = x_generated.detach().numpy()
+            plt.subplot(1, 4, i + 1)
+            self.system.plot_FES()
+            plt.scatter(x_generated[:, 0], x_generated[:, 1], color='white', s=0.5)
+            plt.title(titles[i])
+            if type(self.system).__name__ == 'DoubleWellPotential':
+                plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-4.2, 6.5), color='white', size='12')
+                plt.xlim([-5, 5])
+                plt.ylim([-8, 8])
+            ax = plt.gca()
+            ax.set_aspect(0.58)
+        
+        plt.savefig(save_path, dpi=600)
+
+    def all_generated_samples(self, save_path, generators, n_z=5000):
+        models_str = ['ML', 'KL', 'ML + KL', 'RC']
+        titles = []
+        for i in range(len(models_str)):
+            titles.append('%s model' % models_str[i])
+
+        fig = plt.subplots(2, 4, figsize=(25, 10))
+        for i in range(4):
+            z_generated = []
+            for j in range(len(self.x_samples)):
+                z, _ = generators[i].inverse_generator(torch.from_numpy(self.x_samples[j].astype('float32')))
+                z = z.detach().numpy()
+                z_generated.append(z)
+
+            plt.subplot(2, 4, i + 1)
+            self.binormal_contour()
+            for j in range(len(z_generated)):
+                plt.scatter(z_generated[j][:, 0], z_generated[j][:, 1], color=self.colors[j], s=0.5)
+            if type(self.system).__name__ == 'DoubleWellPotential':
+                plt.annotate('(latent space, $ z = F_{xz}(x) $)', xy=(0, 0), xytext=(-2.625, 2.4375), color='white', size='12')
+            plt.title(titles[i - 4])
+            plt.xlim([-3, 3])
+            plt.ylim([-3, 3])
+
+        z_samples = self.prior.sample_n(self.n_z)
+        z_samples = z_samples.detach().numpy()  
+        
+        for i in range(4, 8):
+            x_generated, _ = generators[i - 4].generator(torch.from_numpy(z_samples))
+            x_generated = x_generated.detach().numpy()
+            plt.subplot(2, 4, i + 1)
+            self.system.plot_FES()
+            plt.scatter(x_generated[:, 0], x_generated[:, 1], color='white', s=0.5)
+            plt.title(titles[i - 4])
+            if type(self.system).__name__ == 'DoubleWellPotential':
+                plt.annotate('(configuration space, $ x = F_{zx}(z) $)', xy=(0, 0), xytext=(-4.2, 6.5), color='white', size='12')
+                plt.xlim([-5, 5])
+                plt.ylim([-8, 8])
+            ax = plt.gca()
+            ax.set_aspect(0.58)
         
         plt.savefig(save_path, dpi=600)
 
