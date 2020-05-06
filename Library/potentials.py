@@ -151,7 +151,7 @@ class DoubleWellPotential:
         nofig = False
         if fig is None:
             nofig = True
-            fig = plt.figure(figsize=(12, 3))
+            fig = plt.figure(figsize=(12, 4))
 
         plt.subplot(1, 2, 1)
         if nofig is True:
