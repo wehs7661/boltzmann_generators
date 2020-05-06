@@ -3,6 +3,7 @@ import integrators
 import thermostats
 import itertools
 import potentials
+import torch
 import data_logging
 import boundary_conditions
 class Particle:
@@ -209,7 +210,13 @@ class System(data_logging.Subject):
             self.particles[indices[i]].vel = vels[i, :]
 
     def get_coordinates(self):
-        coords = np.zeros((len(self.particles), self.dim))
+        # print(self.particles[0].loc.dtype)
+        if self.particles[0].loc.dtype == np.float:
+            coords = np.zeros((len(self.particles), self.dim))
+        elif self.particles[0].loc.dtype == torch.float:
+            coords = torch.zeros((len(self.particles), self.dim))
+        else:
+            print("Non-compatible data type! Please use np.ndarrays or torch.tensors")
         for i in range(len(self.particles)):
             coords[i ,:] = self.particles[i].loc
         return coords
@@ -219,7 +226,7 @@ class System(data_logging.Subject):
             indices = range(len(self.particles))
         
         for i in indices:
-            self.particles[i].loc = coords[i, :]
+            self.particles[i].loc = coords[i]
 
     def get_forces(self):
         forces = np.zeros((len(self.particles), self.dim))

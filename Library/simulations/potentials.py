@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 # Particle Potentials
 class WCAPotential:
@@ -45,7 +46,7 @@ class LJRepulsion:
 
     def __call__(self, r_ij):
         if np.dot(r_ij,r_ij) < self.r_c ** 2 or self.r_c is None:
-            return(self.epsilon * 4 * ((self.sigma**2 / np.dot(r_ij, r_ij)**3) ))
+            return(self.epsilon * 4 * ((self.sigma**2 / np.dot(r_ij, r_ij)**6) ))
         else:
             return(0.0)
     def derivative(self, r_ij):
@@ -114,13 +115,23 @@ class MuellerPotential:
     def __call__(self, r):
         E = 0
         i = 0
-        for A, a, b, c, xj, yj in zip(self.A, self.a, self.b, self.c, self.xj, self.yj):
-            i += 1
-            E += A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2)
-        #     print("Index", i, ":", A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2))
-        # print("E =", self.alpha * E)
-        # print("r =", r)
-        return(self.alpha * E)
+        if r.dtype == np.float:
+            for A, a, b, c, xj, yj in zip(self.A, self.a, self.b, self.c, self.xj, self.yj):
+                i += 1
+                E += A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2)
+            #     print("Index", i, ":", A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2))
+            # print("E =", self.alpha * E)
+            # print("r =", r)
+            return(self.alpha * E)
+        elif r.dtype == torch.float:
+            for A, a, b, c, xj, yj in zip(self.A, self.a, self.b, self.c, self.xj, self.yj):
+                i += 1
+                E += A * torch.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2)
+            #     print("Index", i, ":", A * np.exp(a * (r[0] - xj)**2 + b * (r[0] - xj) * (r[1] - yj) + c * (r[1] - yj)**2))
+            # print("E =", self.alpha * E)
+            # print("r =", r)
+            return(self.alpha * E)
+
 
     def derivative(self, r):
         dx = 0
