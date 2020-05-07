@@ -237,14 +237,14 @@ class MullerBrownPotential:
         nofig = False
         if fig is None:
             nofig = True
-            fig = plt.figure(figsize=(12, 3))
+            fig = plt.figure(figsize=(12, 4))
 
         plt.subplot(1, 2, 1)
         if nofig is True:
             self.plot_FES()
         if samples is not None:
             plt.scatter(samples[:, 0], samples[:, 1], color=color, s=0.5)
-        
+
         plt.subplot(1, 2, 2)
         if nofig is True:
             self.plot_section(offset_diag=0.5)
@@ -364,7 +364,4 @@ class DimerSimulation:
                 else:
                     print("Invalide data type!")
                     sys.exit()
-
-
-
 
